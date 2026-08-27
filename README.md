@@ -23,9 +23,9 @@ Four things to do. Twenty minutes, most of it waiting.
 3. Pick the region closest to you. Click **Create new project** and let it finish. It
    takes a couple of minutes.
 
-> **Already set this up once?** Run `schema.sql` again. It is written to be safe to
-> re-run, and the newest version adds the commissioner. Nothing you have logged is
-> touched.
+> **Already set this up once?** Run `schema.sql` again. It is written to be safe to re-run,
+> and the newest version adds the commissioner, the split tag, and scoring by numbers instead
+> of pins. Nothing you have logged is touched — old games are migrated in place.
 
 ### 2. Build the tables
 
@@ -115,22 +115,32 @@ updates about a minute after you push.
 **Logging scores.** Tap **Log**. You start with the session — the date, the alley, who
 bowled, and whether you split into teams. Then pick how you want to do it:
 
-**Score it live.** The lane view. Everybody's scorecard sits across the top, the pin deck
+**Score it live.** The lane view. Everybody's scorecard sits across the top, the number pad
 fills the bottom half, and it moves to the next bowler by itself the moment a frame is done.
-Tap the pins that fell — or drag one finger across several of them — and hit confirm. Strike,
-Spare and Gutter are one tap. Undo goes back a ball even if that means handing it back to the
-person before you. Each game is written to the record book the moment its tenth frame closes,
-and a game in progress survives locking your phone, a dead battery or closing the tab: come
-back to Log and it offers to pick the night back up. When everybody finishes, it offers you
-game 2.
+Tap how many pins went down — 0 to 9, or the big blue button for a strike or a spare. Undo goes
+back a ball even if that means handing it back to the person before you. Each game is written
+to the record book the moment its tenth frame closes, and a game in progress survives locking
+your phone, a dead battery or closing the tab: come back to Log and it offers to pick the night
+back up. When everybody finishes, it offers you game 2.
+
+**When somebody leaves a split**, tap **That left a split** before the next ball. That is the
+one thing typing a number cannot work out for itself, and it feeds the split rate and split
+conversion on everyone's profile.
+
+**If you would rather tap the actual pins**, there is a link under the pad that swaps to a pin
+deck — drag a finger across it to take several down at once. The only thing it buys you is
+leave tracking: which pins you keep leaving standing, named (10-pin, bucket, greek church), and
+splits spotted automatically instead of tagged by hand. Everything else — average, strike and
+spare percentage, first-ball average, carry, tenth-frame average, streaks — comes out the same
+either way. You can switch whenever you like, even mid-game.
 
 **Type in scores afterwards.** For writing up a night that already happened. Log game 1 for
 everyone, then game 2, and so on. Each game goes in one of two ways, and the toggle remembers
 what you picked last:
 
-- **Full** — tap the pins you knocked down, hit confirm, repeat. The score builds itself as
-  you go and the strip underneath looks like the monitor above the lane. You cannot enter an
-  impossible frame; the pins that are already down are not tappable.
+- **Full** — ball by ball, the same pad as the live view. The score builds itself as you go and
+  the strip underneath looks like the monitor above the lane. You cannot enter an impossible
+  frame: after a 7, the buttons for 8 and 9 stop working.
 - **Quick** — just the final score. Fast, and honest about it: those games get a small amber
   dot, and anything that needs to know what happened ball by ball quietly leaves them out
   rather than making something up.

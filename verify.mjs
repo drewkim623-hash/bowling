@@ -164,6 +164,52 @@ section('Per-game stats');
   eq('all-nines tenth frame pins', o.tenthPins, 9);
 }
 
+section('Scored by numbers alone');
+eq('a game typed in as numbers scores the same', S2(CARDS[0].c), 179);
+eq('numbers-only perfect game', S2(rep([10], 12)), 300);
+eq('numbers-only all spares', S2([...rep([9,1], 9), 9,1,9]), 190);
+{
+  const g = B.gameStats(numbersOnly([0,10, ...rep([0,0], 9)]));
+  eq('a gutter then all ten is a spare, not a strike', g.strikes, 0);
+  eq('it counts as the spare it is', g.spares, 1);
+  eq('every second ball counts as a chance at a spare', g.spareChances, 10);
+  eq('ten first balls in that game, not eleven', g.firstBalls, 10);
+  const m = B.gameStats(rollsFromCounts([0,10, ...rep([0,0], 9)]));
+  eq('the same is true when the pins were tapped', m.strikes, 0);
+}
+{
+  const left = numbersOnly([8,1, ...rep([0,0], 9)]);
+  left[0].split = true;
+  eq('a split you tagged by hand counts', B.gameStats(left).splits, 1);
+  eq('and it was not converted', B.gameStats(left).splitConverts, 0);
+  const got = numbersOnly([8,2, ...rep([0,0], 9)]);
+  got[0].split = true;
+  eq('a tagged split you pick up counts as converted', B.gameStats(got).splitConverts, 1);
+  eq('an untagged leave is not a split when nobody said so', B.gameStats(numbersOnly([8,1, ...rep([0,0],9)])).splits, 0);
+}
+{
+  const tapped = rollsFromCounts([9,0, ...rep([0,0], 9)]);
+  ok('tapped games still work splits out on their own without tagging',
+     B.gameStats(rollsFromCounts([9,1, ...rep([0,0],9)])).splits >= 0);
+  eq('and still collect what was left standing', B.gameStats(tapped).leaves.length > 0, true);
+  eq('a numbers game knows it cannot report leaves', B.gameStats(numbersOnly([9,0, ...rep([0,0],9)])).leaves.length, 0);
+}
+ok('you cannot knock down more pins than are standing',
+   B.validateRolls([{ frame:1, roll:1, pins:7 }, { frame:1, roll:2, pins:5 }]) !== null);
+ok('a legal numbers game validates', B.validateRolls(numbersOnly(rep([10], 12))) === null);
+
+/* The same game, entered as plain numbers with no idea which pins fell. */
+function numbersOnly(c){
+  const rolls = [];
+  for (const p of c){
+    const st = B.deckState(rolls);
+    if (st.done) throw new Error('too many balls for one game');
+    rolls.push({ frame: st.frame, roll: st.roll, pins: p });
+  }
+  return rolls;
+}
+function S2(c){ return B.scoreRolls(numbersOnly(c)).total; }
+
 /* Build roll records (with correct standing masks) from a flat list of ball
    results, the way the app stores them. Used all over the tests above. */
 function rollsFromCounts(c){
@@ -314,29 +360,40 @@ async function browserTests(){
   await page.locator('.sheet .closebtn').click();
   await page.waitForSelector('.sheet', { state:'detached' });
 
-  section('Score entry');
-  await page.locator('#tabs .tab', { hasText:'Log' }).click();
+  section('Score entry — just the number');
+  await page.locator('#tabs .tab', { hasText:/^Log$/ }).click();
   await page.locator('button.btn', { hasText:'Type in scores afterwards' }).click();
   await page.locator('button.btn', { hasText:'Log game' }).first().click();
-  await page.waitForSelector('svg.deck');
-  ok('the pin deck draws all ten pins', await page.locator('svg.deck g.pin').count() === 10);
-  await page.locator('svg.deck g.pin').nth(0).click();
-  await page.locator('svg.deck g.pin').nth(1).click();
-  await page.locator('svg.deck g.pin').nth(2).click();
-  await page.locator('button.btn.pri', { hasText:'confirm' }).click();
-  eq('after knocking three, seven are still standing',
-     await page.locator('svg.deck g.pin:not(.locked)').count(), 7);
-  eq('the three that fell cannot be tapped again',
-     await page.locator('svg.deck g.pin.locked').count(), 3);
-  await page.locator('button.btn:not([disabled])', { hasText:/^Spare$/ }).click();
+  await page.waitForSelector('.pad');
+  eq('ten numbers, a mark and an undo', await page.locator('.pad button').count(), 12);
+  ok('nothing to tag as a split before the first ball', await page.locator('.pad button.split').count() === 0);
+  await page.locator('.pad button', { hasText:/^3$/ }).click();
+  ok('the mark button becomes the seven-pin spare',
+     (await page.locator('.pad button.mark').innerText()).includes('7'),
+     await page.locator('.pad button.mark').innerText());
+  eq('you cannot claim more pins than are standing', await page.locator('.pad button:disabled').count(), 2);
+  eq('now it offers the split tag', await page.locator('.pad button.split').count(), 1);
+  await page.locator('.pad button.split').click();
+  eq('and the tag sticks', await page.locator('.pad button.split').getAttribute('aria-pressed'), 'true');
+  await page.locator('button.swap', { hasText:'tap the actual pins' }).click();
+  ok('mid-frame, the deck admits it cannot know which pins are left',
+     /anyone’s guess/.test(await page.locator('#panel').innerText()));
+  ok('and it keeps the split tag while it says so',
+     await page.locator('.pad button.split[aria-pressed="true"]').count() === 1);
+  await page.locator('button.swap', { hasText:'Stay on numbers' }).click();
+  await page.locator('.pad button.mark').click();
   ok('the strip shows a spare', (await page.locator('.strip').innerText()).includes('/'));
-  for (let i = 0; i < 11; i++) await page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ }).click();
+  for (let i = 0; i < 11; i++) await page.locator('.pad button.mark', { hasText:'strike' }).click();
   const shown = await page.locator('#panel .big.n').first().innerText();
   eq('a spare then eleven strikes scores 290', shown.trim(), '290');
   await page.locator('button.btn.pri', { hasText:'Save this game' }).click();
-  await page.waitForSelector('svg.deck', { state:'detached' });
+  await page.waitForSelector('.pad', { state:'detached' });
   ok('the saved game lands in the session grid',
      (await page.locator('#panel').innerText()).includes('290'));
+  ok('the split tag was saved with the ball that left it',
+     await page.evaluate(() => window.APP.state.rolls.some(r => r.split === true)));
+  ok('a game scored by numbers is stored as such',
+     await page.evaluate(() => window.APP.state.games.some(g => g.entry_mode === 'counts')));
 
   section('Quick entry');
   await page.locator('button.btn', { hasText:'Log game' }).first().click();
@@ -383,14 +440,20 @@ async function browserTests(){
   eq('a scorecard row for each bowler', await page.locator('.mini .mrow').count(), 2);
   ok('the hero gets out of the way while you score', !(await page.locator('.hero').isVisible()));
   const first = await page.locator('.upnext .who').innerText();
-  await page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ }).click();
+  await page.locator('.pad button.mark', { hasText:'strike' }).click();
   const second = await page.locator('.upnext .who').innerText();
   ok('a finished frame passes it to the next bowler', first !== second, `${first} then ${second}`);
   ok('the strike lands on the right scorecard',
      (await page.locator('.mini .mrow').first().innerText()).includes('X'));
-  await page.locator('button.btn:not([disabled])', { hasText:'Undo' }).click();
+  await page.locator('.pad button.act', { hasText:'Undo' }).click();
   eq('undo hands it back to whoever threw', await page.locator('.upnext .who').innerText(), first);
 
+  await page.locator('button.swap', { hasText:'tap the actual pins' }).click();
+  await page.waitForSelector('svg.deck');
+  ok('the header counts the pins that are actually standing',
+     /10 standing/.test(await page.locator('.upnext').innerText()),
+     await page.locator('.upnext').innerText());
+  eq('the deck is still there for anyone who wants it', await page.locator('svg.deck g.pin').count(), 10);
   const box = async n => {
     const b = await page.locator(`svg.deck g.pin[data-pin="${n}"] circle`).boundingBox();
     return [b.x + b.width/2, b.y + b.height/2];
@@ -409,9 +472,11 @@ async function browserTests(){
   for (const n of [7,8,9,10]) await page.locator(`svg.deck g.pin[data-pin="${n}"]`).click();
   ok('tapping them again puts them back up',
      (await page.locator('button.btn.pri', { hasText:'confirm' }).innerText()).includes('Nothing down'));
+  await page.locator('button.swap', { hasText:'type the number' }).click();
+  await page.waitForSelector('.pad');
 
-  await page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ }).click();
-  await page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ }).click();
+  await page.locator('.pad button.mark', { hasText:'strike' }).click();
+  await page.locator('.pad button.mark', { hasText:'strike' }).click();
   await page.reload();
   await page.waitForSelector('body[data-ready="1"]');
   await page.locator('#tabs .tab', { hasText:/^Log$/ }).click();
@@ -423,7 +488,7 @@ async function browserTests(){
      (await page.locator('.mini').innerText()).includes('X'));
 
   for (let i = 0; i < 30; i++){
-    const strike = page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ });
+    const strike = page.locator('.pad button.mark', { hasText:'strike' });
     if (!(await strike.count())) break;              // the game ended
     await strike.click();
   }

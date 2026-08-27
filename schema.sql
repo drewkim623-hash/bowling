@@ -66,7 +66,7 @@ create table if not exists games (
   profile_id  uuid not null references profiles(id) on delete cascade,
   game_no     smallint not null check (game_no between 1 and 12),
   total_score smallint not null check (total_score between 0 and 300),
-  entry_mode  text not null check (entry_mode in ('pins','quick')),
+  entry_mode  text not null check (entry_mode in ('pins','counts','quick')),
   logged_by   uuid not null references profiles(id) on delete cascade,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
@@ -75,16 +75,41 @@ create table if not exists games (
 create index if not exists games_profile_idx on games (profile_id);
 create index if not exists games_session_idx on games (session_id);
 
--- Only present for entry_mode = 'pins'. Quick-entry games are just a total.
+-- One row per ball. Quick-entry games have none of these — they are just a total.
+--   pins            how many went down. Always known.
+--   split           tagged by the person scoring: that ball left a split.
+--   standing_before / knocked
+--                   which pins, as bitmasks. Only filled in when the game was
+--                   scored by tapping the deck instead of typing the number, so
+--                   they are nullable. Leave frequency needs them; nothing else does.
 create table if not exists rolls (
   game_id         uuid not null references games(id) on delete cascade,
   frame           smallint not null check (frame between 1 and 10),
   roll            smallint not null check (roll between 1 and 3),
-  standing_before smallint not null check (standing_before between 0 and 1023),
-  knocked         smallint not null check (knocked between 0 and 1023),
+  pins            smallint check (pins between 0 and 10),
+  split           boolean not null default false,
+  standing_before smallint check (standing_before between 0 and 1023),
+  knocked         smallint check (knocked between 0 and 1023),
   primary key (game_id, frame, roll),
   check ((knocked & ~standing_before) = 0)   -- cannot knock down what was already down
 );
+
+-- Bringing an older database up to date. All of this is safe to re-run.
+alter table rolls add column if not exists pins  smallint;
+alter table rolls add column if not exists split boolean not null default false;
+alter table rolls alter column standing_before drop not null;
+alter table rolls alter column knocked         drop not null;
+-- fill in the count for anything logged before the column existed
+update rolls set pins = length(replace(knocked::bit(10)::text, '0', ''))
+  where pins is null and knocked is not null;
+alter table games drop constraint if exists games_entry_mode_check;
+alter table games add  constraint games_entry_mode_check check (entry_mode in ('pins','counts','quick'));
+do $$ begin
+  alter table rolls add constraint rolls_pins_ck check (pins between 0 and 10);
+exception when duplicate_object then null; end $$;
+do $$ begin
+  alter table rolls add constraint rolls_has_a_count check (pins is not null or knocked is not null);
+exception when duplicate_object then null; end $$;
 
 -- The honour system in the open. Every change to a game appends a row here and
 -- nothing ever deletes one, so game_id is deliberately NOT a foreign key: the

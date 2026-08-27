@@ -207,6 +207,20 @@ input:focus,select:focus{border-color:var(--blue)}
 .deckbtns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
 .deckbtns .btn{padding:12px 4px;font-size:13px}
 
+/* ---- the number pad: how most people actually score ---- */
+.pad{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:12px 0}
+.pad button{padding:14px 0;min-height:58px;border-radius:12px;background:var(--raised);
+  border:1px solid var(--ring);font-size:20px;font-weight:700;display:grid;place-items:center;
+  text-align:center;line-height:1}
+.pad button:hover{background:var(--hover)}
+.pad button:disabled{opacity:.22;pointer-events:none}
+.pad button.mark{grid-column:span 3;background:var(--blue);border-color:var(--blue);color:#fff;font-size:18px}
+.pad button.act{grid-column:span 2;font-size:14px;font-weight:650}
+.pad button.split{grid-column:span 5;font-size:14px;font-weight:650;min-height:48px}
+.pad button.split[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);color:#141418}
+.swap{display:block;width:100%;text-align:center;font-size:12.5px;color:var(--muted);
+  padding:10px;text-decoration:underline;text-underline-offset:3px}
+
 /* ---- the live lane ---- */
 .mini{display:flex;flex-direction:column;gap:5px;margin:10px 0}
 .mrow{display:grid;grid-template-columns:60px 1fr;gap:7px;align-items:center;width:100%;
@@ -336,7 +350,12 @@ const aheadOf = p => ALL.filter(q => ROW[q] === ROW[p] - 1 && Math.abs(XP[q] - X
 function ordered(rolls){
   return [...rolls].sort((a,b) => a.frame - b.frame || a.roll - b.roll);
 }
-function counts(rolls){ return ordered(rolls).map(r => cnt(r.knocked)); }
+/* How many pins this ball took down. A roll always knows the number; it only
+   knows *which* pins if it was entered by tapping the deck, in which case the
+   masks are filled in too. Everything downstream goes through here. */
+function fell(r){ return r.pins != null ? r.pins : cnt(r.knocked); }
+function counts(rolls){ return ordered(rolls).map(fell); }
+const leaveMask = r => (r.standing_before != null && r.knocked != null) ? (r.standing_before & ~r.knocked) : null;
 
 /* The whole game, frame by frame, from a flat list of ball results.
    Handles unfinished games: a frame whose bonus is not known yet has score null. */
@@ -399,30 +418,36 @@ function scoreCounts(c){
 }
 function scoreRolls(rolls){ return scoreCounts(counts(rolls)); }
 
-/* What the pin deck should show next. This is the only place that knows
-   about the 10th frame re-rack. */
+/* What comes next. The only place that knows about the 10th frame re-rack.
+   standingCount is always right; standing (the bitmask) is null when the game
+   was scored by numbers alone. fullRack says this ball faces ten fresh pins,
+   which is what strike percentage and first-ball average count — a second ball
+   after a gutter faces ten pins too, and must not be mistaken for one. */
 function deckState(rolls){
   const by = {};
   ordered(rolls).forEach(r => { (by[r.frame] = by[r.frame] || []).push(r); });
   for (let f = 1; f <= 10; f++){
     const rs = by[f] || [];
     if (f < 10){
-      if (rs.length === 0) return { done:false, frame:f, roll:1, standing:FULL };
-      if (cnt(rs[0].knocked) === 10) continue;
-      if (rs.length === 1) return { done:false, frame:f, roll:2, standing: rs[0].standing_before & ~rs[0].knocked };
+      if (rs.length === 0) return { done:false, frame:f, roll:1, standing:FULL, standingCount:10, fullRack:true };
+      const a = fell(rs[0]);
+      if (a === 10) continue;
+      if (rs.length === 1)
+        return { done:false, frame:f, roll:2, standing:leaveMask(rs[0]), standingCount:10 - a, fullRack:false };
       continue;
     }
-    if (rs.length === 0) return { done:false, frame:10, roll:1, standing:FULL };
-    const a = cnt(rs[0].knocked);
-    if (rs.length === 1)
-      return { done:false, frame:10, roll:2, standing: a === 10 ? FULL : (rs[0].standing_before & ~rs[0].knocked) };
-    const b = cnt(rs[1].knocked);
+    if (rs.length === 0) return { done:false, frame:10, roll:1, standing:FULL, standingCount:10, fullRack:true };
+    const a = fell(rs[0]);
+    if (rs.length === 1) return a === 10
+      ? { done:false, frame:10, roll:2, standing:FULL, standingCount:10, fullRack:true }
+      : { done:false, frame:10, roll:2, standing:leaveMask(rs[0]), standingCount:10 - a, fullRack:false };
+    const b = fell(rs[1]);
     if (rs.length === 2){
       if (a !== 10 && a + b !== 10) return { done:true };
-      let st;
-      if (a === 10) st = b === 10 ? FULL : (rs[1].standing_before & ~rs[1].knocked);
-      else st = FULL;                     // the spare cleared the deck, fresh rack
-      return { done:false, frame:10, roll:3, standing: st };
+      if (a === 10) return b === 10
+        ? { done:false, frame:10, roll:3, standing:FULL, standingCount:10, fullRack:true }
+        : { done:false, frame:10, roll:3, standing:leaveMask(rs[1]), standingCount:10 - b, fullRack:false };
+      return { done:false, frame:10, roll:3, standing:FULL, standingCount:10, fullRack:true };  // the spare cleared it
     }
     return { done:true };
   }
@@ -438,8 +463,15 @@ function validateRolls(rolls){
     const st = deckState(sofar);
     if (st.done) return 'extra ball after the game was over';
     if (r.frame !== st.frame || r.roll !== st.roll) return `expected frame ${st.frame} ball ${st.roll}, got frame ${r.frame} ball ${r.roll}`;
-    if (r.standing_before !== st.standing) return `frame ${r.frame} ball ${r.roll}: wrong pins standing`;
-    if (r.knocked & ~r.standing_before) return `frame ${r.frame} ball ${r.roll}: knocked down a pin that was already down`;
+    if (fell(r) > st.standingCount)
+      return `frame ${r.frame} ball ${r.roll}: only ${st.standingCount} pins were standing`;
+    if (fell(r) < 0) return `frame ${r.frame} ball ${r.roll}: negative pins`;
+    if (r.standing_before != null){
+      if (st.standing != null && r.standing_before !== st.standing)
+        return `frame ${r.frame} ball ${r.roll}: wrong pins standing`;
+      if (r.knocked & ~r.standing_before)
+        return `frame ${r.frame} ball ${r.roll}: knocked down a pin that was already down`;
+    }
     sofar.push(r);
   }
   return null;
@@ -598,11 +630,12 @@ function gameStats(rolls){
   s.opens = sc.frames.filter(f => f.kind === 'open').length;
   s.clean = sc.complete && s.opens === 0;
 
-  let run = 0, pendingSplit = false, pendingMask = 0;
+  let run = 0, pendingSplit = false, sofar = [];
   for (const r of seq){
-    const k = cnt(r.knocked);
-    const fresh = r.standing_before === FULL;
-    if (fresh){
+    const st = deckState(sofar);
+    sofar.push(r);
+    const k = fell(r);
+    if (st.fullRack){
       s.firstBalls++; s.firstBallPins += k; s.firstBallDist[k]++;
       if (k >= 8) s.pocket++;
       if (k === 10){
@@ -610,15 +643,16 @@ function gameStats(rolls){
         pendingSplit = false;
       } else {
         run = 0;
-        const leave = r.standing_before & ~r.knocked;
-        s.leaves.push(leave);
-        pendingSplit = isSplit(leave); pendingMask = leave;
+        const leave = leaveMask(r);
+        if (leave != null) s.leaves.push(leave);
+        /* a split is either tagged by hand or worked out from the deck */
+        pendingSplit = r.split === true || (leave != null && isSplit(leave));
         if (pendingSplit) s.splits++;
       }
     } else {
       run = 0;
       s.spareChances++;
-      if (r.knocked === r.standing_before){
+      if (k === st.standingCount){
         s.spares++;
         if (pendingSplit) s.splitConverts++;
       }
@@ -672,7 +706,7 @@ function commonLeaves(leaves, top = 6){
 
 window.BOWL = {
   FULL, bit, cnt, pinsOf, maskOf, ROW, XP, aheadOf,
-  ordered, counts, scoreCounts, scoreRolls, deckState, validateRolls,
+  ordered, counts, fell, leaveMask, scoreCounts, scoreRolls, deckState, validateRolls,
   possibleScores, isPossibleScore, witness,
   isSplit, leaveName, gameStats, mergeStats,
   pct, mean, stdev, handicap, commonLeaves,
@@ -766,6 +800,10 @@ function ago(iso){
   return dateLabel(new Date(iso).toISOString());
 }
 const yearOf = d => Number(String(d).slice(0, 4));
+const rollRow = r => ({
+  frame:r.frame, roll:r.roll, pins: B.fell(r), split: !!r.split,
+  standing_before: r.standing_before ?? null, knocked: r.knocked ?? null,
+});
 const uid = () => (crypto.randomUUID ? crypto.randomUUID()
   : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
       const r = Math.random()*16|0; return (c === 'x' ? r : (r&0x3|0x8)).toString(16); }));
@@ -1046,7 +1084,7 @@ const MIN_GAMES = 6;
 function careerOf(pid){
   const games = D.gamesByProfile.get(pid) || [];
   const scores = games.map(g => g.total_score);
-  const pinGames = games.filter(g => g.entry_mode === 'pins' && g.rolls.length);
+  const pinGames = games.filter(g => g.entry_mode !== 'quick' && g.rolls.length);
   const per = pinGames.map(g => B.gameStats(g.rolls));
   const roll = B.mergeStats(per);
   const bySession = new Map();
@@ -1206,16 +1244,17 @@ const GLOSS = {
   spare:    ['Spare %', 'When you left pins standing, how often you knocked down the rest with your second ball.'],
   trend:    ['Trend', 'The little line is your last ten games. The number next to it is how much better or worse those ten are than your all-time average. Green is up.'],
   hcap:     ['Handicap', 'A head start for people with a lower average, so the rest of us have a chance: 90% of the gap between your average and 200, capped at 100. Add it to your score for a fair fight.'],
+  howscored:['The two ways of scoring', 'Type how many pins fell on each ball — quick, and enough for nearly every number on this site. Or tap the actual pins on the deck, which additionally tracks what you leave standing and spots splits for you. You can switch mid-game and it makes no difference to the score.'],
   quick:    ['The little amber dot', 'That game was entered as just a final score, so there is no ball-by-ball detail behind it. It still counts for average, high game and records, but it is skipped by anything that needs to know what happened on each roll.'],
   firstball:['First-ball average', 'How many pins you knock down with your first ball, on average. The single best measure of who actually throws it well.'],
-  split:    ['Split', 'The headpin is down and the pins left standing have a gap in them, so one ball cannot realistically hit them all. The 7-10 is the famous one.'],
+  split:    ['Split', 'The headpin is down and the pins left standing have a gap in them, so one ball cannot realistically hit them all. The 7-10 is the famous one. Tap the split button while you are scoring to mark one; if you scored by tapping the actual pins, the site works it out on its own.'],
   splitpct: ['Split conversion', 'How often you knocked down every pin of a split anyway. Nobody has a high number here.'],
   open:     ['Open frame', 'A frame where you left at least one pin standing after both balls.'],
   mark:     ['Mark %', 'How many of your frames ended in a strike or a spare rather than an open.'],
   tenth:    ['10th-frame average', 'Average pins you knock down in the last frame, bonus balls included. This is where games get thrown away.'],
   carry:    ['Carry %', 'When you hit the pocket well — eight or more pins on the first ball — how often it actually turned into a strike. Low carry means you are throwing it fine and getting unlucky.'],
   streak:   ['Longest streak', 'The most strikes you have thrown back to back. Three is a turkey.'],
-  leave:    ['Most common leave', 'The pins you most often have left standing after your first ball.'],
+  leave:    ['Most common leave', 'The pins you most often have left standing after your first ball. This one only knows about games where somebody tapped the actual pins rather than typing the number, because typing 8 does not say which two are left.'],
   sd:       ['Consistency', 'Standard deviation — the typical distance between one of your games and your own average. A small number means every game looks the same.'],
   minimum:  ['Why am I not on the board?', `The ranked table needs ${MIN_GAMES} games before it will list you. Everyone below that is in the group underneath, with their count so far.`],
 };
@@ -1491,6 +1530,84 @@ function makeDeck({ standing, onChange, big }){
   return svg;
 }
 
+/* ---- the input area, shared by the live lane and by typing one up later.
+   Numbers by default: how many pins that ball took down, which is all most
+   people can remember. Tapping the actual pins stays available for anyone who
+   wants their leaves tracked. ---- */
+const inputMode = () => localStorage.getItem('bowl.input') === 'pins' ? 'pins' : 'numbers';
+function setInputMode(m){ localStorage.setItem('bowl.input', m); }
+
+function inputArea({ rolls, throwBall, undo, canUndo, afterChange }){
+  const st = B.deckState(rolls);
+  const wrapEl = h('div', {});
+  const max = st.standingCount;
+
+  /* the ball that left this frame open, so a split can be tagged onto it */
+  const prev = st.fullRack ? null
+    : B.ordered(rolls).filter(r => r.frame === st.frame).slice(-1)[0];
+  const splitBtn = prev ? h('button.split', { 'aria-pressed': String(!!prev.split),
+    onclick(){
+      prev.split = !prev.split;
+      if (navigator.vibrate) navigator.vibrate(8);
+      afterChange();
+    } }, prev.split ? '✓ tagged as a split' : 'That left a split') : null;
+
+  if (inputMode() === 'numbers'){
+    const pad = h('div.pad', {});
+    for (let n = 0; n <= 9; n++)
+      pad.append(h('button', { disabled: n > max, onclick(){ throwBall(n, null); } }, n));
+    pad.append(h('button.mark', { onclick(){ throwBall(max, null); } },
+      st.fullRack ? 'X   strike' : `/   spare (${max})`));
+    pad.append(h('button.act', { disabled: !canUndo, onclick(){ undo(); } }, 'Undo'));
+    if (splitBtn) pad.append(splitBtn);
+    wrapEl.append(pad);
+    wrapEl.append(h('p.tiny.muted', { style:{ textAlign:'center' } },
+      st.fullRack ? 'How many pins went down on that ball?'
+                  : `${max} standing. Tap how many of them you got.`));
+    wrapEl.append(h('button.swap', { onclick(){ setInputMode('pins'); afterChange(); } },
+      'Rather tap the actual pins?'));
+    return wrapEl;
+  }
+
+  if (st.standing == null && !st.fullRack){
+    /* This frame was scored by number, so nobody knows which pins are still
+       up. Guessing would write a lie into the database. Number it is. */
+    const pad = h('div.pad', {});
+    for (let n = 0; n <= 9; n++)
+      pad.append(h('button', { disabled: n > max, onclick(){ throwBall(n, null); } }, n));
+    pad.append(h('button.mark', { onclick(){ throwBall(max, null); } }, `/   spare (${max})`));
+    pad.append(h('button.act', { disabled: !canUndo, onclick(){ undo(); } }, 'Undo'));
+    if (splitBtn) pad.append(splitBtn);
+    wrapEl.append(pad, h('p.tiny.muted', { style:{ textAlign:'center' } },
+      `This frame was scored by number, so which ${max} are standing is anyone’s guess. The deck comes back next frame.`));
+    wrapEl.append(h('button.swap', { onclick(){ setInputMode('numbers'); afterChange(); } },
+      'Stay on numbers'));
+    return wrapEl;
+  }
+  const fresh = st.fullRack;
+  const standing = st.standing;
+  const confirm = h('button.btn.pri.wide.big', { style:{ marginTop:'6px' },
+    onclick(){ throwBall(B.cnt(deck.getSel()), deck.getSel()); } });
+  const deck = makeDeck({ standing, big:true, onChange(sel){
+    const n = B.cnt(sel);
+    confirm.textContent = n === 0 ? 'Nothing down — confirm'
+      : `${n} down${n === B.cnt(standing) ? (fresh ? ' — strike!' : ' — spare!') : ''} — confirm`;
+  } });
+  deck.setSel(0);
+  wrapEl.append(h('div.deckbtns', {},
+    h('button.btn', { disabled: !fresh, onclick(){ throwBall(10, B.FULL); } }, 'Strike'),
+    h('button.btn', { disabled: fresh, onclick(){ throwBall(B.cnt(standing), standing); } }, 'Spare'),
+    h('button.btn', { onclick(){ throwBall(0, 0); } }, 'Gutter'),
+    h('button.btn', { disabled: !canUndo, onclick(){ undo(); } }, 'Undo')));
+  wrapEl.append(h('div.deckwrap', {}, deck), confirm);
+  if (splitBtn) wrapEl.append(h('div.pad', { style:{ marginTop:'8px' } }, splitBtn));
+  wrapEl.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
+    'Drag across the pins to take several down at once.'));
+  wrapEl.append(h('button.swap', { onclick(){ setInputMode('numbers'); afterChange(); } },
+    'Rather just type the number?'));
+  return wrapEl;
+}
+
 /* ---- one game's entry screen ---- */
 function entryScreen(){
   const e = LOG.entry;
@@ -1537,7 +1654,7 @@ function entryScreen(){
         h('div', {}, h('div.up', {}, 'Score so far'), h('div.big.n', { style:{ fontSize:'30px', fontWeight:750 } }, sc.total)),
         h('div', { style:{ textAlign:'right' } },
           h('div.up', {}, done ? 'Game complete' : `Frame ${st.frame}`),
-          h('div.small.muted', {}, done ? 'Save it below' : `Ball ${st.roll} · ${B.cnt(st.standing)} standing`))),
+          h('div.small.muted', {}, done ? 'Save it below' : `Ball ${st.roll} · ${st.standingCount} standing`))),
       h('div', { style:{ marginTop:'10px' } }, scoreStrip(sc.frames, done ? null : st.frame))));
 
     if (done){
@@ -1547,44 +1664,32 @@ function entryScreen(){
       return;
     }
 
-    /* shortcuts, then the deck */
-    const standing = st.standing;
-    const fresh = standing === B.FULL;
-    wrapEl.append(h('div.deckbtns', {},
-      h('button.btn', { disabled: !fresh, onclick(){ throwBall(B.FULL); } }, 'Strike'),
-      h('button.btn', { disabled: fresh, onclick(){ throwBall(standing); } }, 'Spare'),
-      h('button.btn', { onclick(){ throwBall(0); } }, 'Gutter'),
-      h('button.btn', { disabled: !e.sel && !e.rolls.length,
-        onclick(){ if (e.sel) e.sel = 0; else e.rolls.pop(); draw(); } }, 'Undo')));
-
-    const confirm = h('button.btn.pri.wide.big', { style:{ marginTop:'6px' },
-      onclick(){ throwBall(deck.getSel()); } });
-    const deck = makeDeck({ standing, onChange(sel){
-      e.sel = sel;
-      const n = B.cnt(sel);
-      confirm.textContent = n === 0 ? 'Nothing down — confirm'
-        : `${n} down${n === B.cnt(standing) ? (standing === B.FULL ? ' — strike!' : ' — spare!') : ''} — confirm`;
-    } });
-    deck.setSel(e.sel || 0);
-    wrapEl.append(h('div.deckwrap', {}, deck), confirm);
-    wrapEl.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
-      'Tap every pin you knocked over, then confirm. Dark pins were already down.'));
+    wrapEl.append(inputArea({
+      rolls: e.rolls,
+      throwBall(pins, mask){ throwBall(pins, mask); },
+      undo(){ if (e.rolls.length) e.rolls.pop(); draw(); },
+      canUndo: e.rolls.length > 0,
+      afterChange: draw,
+    }));
   }
-  function throwBall(mask){
+  function throwBall(pins, mask){
     const st = B.deckState(e.rolls);
     if (st.done) return;
-    e.rolls.push({ frame:st.frame, roll:st.roll, standing_before:st.standing, knocked: mask & st.standing });
-    e.sel = 0;
+    const row = { frame:st.frame, roll:st.roll, pins };
+    if (mask != null && st.standing != null){ row.standing_before = st.standing; row.knocked = mask & st.standing; }
+    e.rolls.push(row);
     draw();
   }
   async function saveGame(total, rolls){
     const g = {
       id: e.id || uid(), session_id: LOG.session.id, profile_id: e.profile_id, game_no: e.game_no,
-      total_score: total, entry_mode: LOG.mode, logged_by: state.user.id,
+      total_score: total,
+    entry_mode: LOG.mode === 'quick' ? 'quick' : (rolls.every(r => r.knocked != null) ? 'pins' : 'counts'),
+    logged_by: state.user.id,
       created_at: e.created_at || new Date().toISOString(), updated_at: new Date().toISOString(),
     };
     try {
-      await db.saveGame(g, rolls.map(r => ({ frame:r.frame, roll:r.roll, standing_before:r.standing_before, knocked:r.knocked })), e.before || null);
+      await db.saveGame(g, rolls.map(rollRow), e.before || null);
       await load();
       LOG.entry = null;
       toast(`${D.profile.get(g.profile_id)?.display_name || 'Game'} — ${total}`);
@@ -1677,22 +1782,25 @@ async function saveLiveGame(b){
   const key = b.id + '.' + LIVE.gameNo;
   const g = {
     id: LIVE.saved[key] || uid(), session_id: LIVE.session.id, profile_id: b.id,
-    game_no: LIVE.gameNo, total_score: B.scoreRolls(rolls).total, entry_mode:'pins',
+    game_no: LIVE.gameNo, total_score: B.scoreRolls(rolls).total,
+    entry_mode: rolls.every(r => r.knocked != null) ? 'pins' : 'counts',
     logged_by: state.user.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   };
   LIVE.saved[key] = g.id;
   persistLive();
   try {
-    await db.saveGame(g, rolls.map(r => ({ frame:r.frame, roll:r.roll, standing_before:r.standing_before, knocked:r.knocked })), null);
+    await db.saveGame(g, rolls.map(rollRow), null);
     await load();
   } catch (err){ toast('Could not save that game: ' + (err.message || err)); }
 }
-function liveThrow(mask){
+function liveThrow(pins, mask){
   const b = LIVE.bowlers[LIVE.turn];
   const rolls = liveRolls(b, LIVE.gameNo);
   const st = B.deckState(rolls);
   if (st.done) return;
-  rolls.push({ frame:st.frame, roll:st.roll, standing_before:st.standing, knocked: mask & st.standing });
+  const row = { frame:st.frame, roll:st.roll, pins };
+  if (mask != null && st.standing != null){ row.standing_before = st.standing; row.knocked = mask & st.standing; }
+  rolls.push(row);
   LIVE.history.push({ id:b.id, gameNo:LIVE.gameNo, turn:LIVE.turn });
   const after = B.deckState(rolls);
   persistLive();
@@ -1771,28 +1879,19 @@ function liveView(){
 
   box.append(h('div.upnext', {}, avatar(D.profile.get(b.id)),
     h('div', {}, h('div.who', {}, b.name),
-      h('div.tiny.muted', {}, `frame ${st.frame} · ball ${st.roll} · ${B.cnt(st.standing)} standing`)),
+      h('div.tiny.muted', {}, `frame ${st.frame} · ball ${st.roll} · ${st.standingCount} standing`)),
     h('div.sc', {}, h('b.n', {}, sc.frames.some(f => f.score != null) ? sc.total : '–'),
       h('span.tiny.muted', {}, gs.strikes ? `${gs.strikes} strike${gs.strikes > 1 ? 's' : ''}` : 'no strikes yet'))));
 
-  const fresh = st.standing === B.FULL;
-  const confirm = h('button.btn.pri.wide.big', { style:{ marginTop:'6px' },
-    onclick(){ liveThrow(deck.getSel()); } });
-  const deck = makeDeck({ standing: st.standing, big:true, onChange(sel){
-    const n = B.cnt(sel);
-    confirm.textContent = n === 0 ? 'Nothing down — confirm'
-      : `${n} down${n === B.cnt(st.standing) ? (fresh ? ' — strike!' : ' — spare!') : ''} — confirm`;
-  } });
-  deck.setSel(0);
-
-  box.append(h('div.deckbtns', {},
-    h('button.btn', { disabled: !fresh, onclick(){ liveThrow(B.FULL); } }, 'Strike'),
-    h('button.btn', { disabled: fresh, onclick(){ liveThrow(st.standing); } }, 'Spare'),
-    h('button.btn', { onclick(){ liveThrow(0); } }, 'Gutter'),
-    h('button.btn', { disabled: !LIVE.history.length, onclick(){ liveUndo(); } }, 'Undo')));
-  box.append(h('div.deckwrap', {}, deck), confirm);
-  box.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
-    'Drag across the pins to take several down at once. It moves to the next bowler on its own.'));
+  box.append(inputArea({
+    rolls,
+    throwBall: liveThrow,
+    undo: liveUndo,
+    canUndo: LIVE.history.length > 0,
+    afterChange(){ persistLive(); render(); },
+  }));
+  box.append(h('p.tiny.muted', { style:{ textAlign:'center' } },
+    'It moves to the next bowler on its own.'));
   return box;
 }
 
@@ -1939,7 +2038,7 @@ function tabLog(){
     }
   }
   box.append(sessionForm());
-  box.append(glossary([GLOSS.quick,
+  box.append(glossary([GLOSS.howscored, GLOSS.split, GLOSS.quick,
     ['Who can log what', 'Anyone signed in can log a game for anyone else — one person usually enters the whole lane. The game always shows who entered it.'],
     ['The commissioner', 'One person can fix or remove anybody’s games and sessions, for when a score goes in wrong and the person who typed it has gone home. Every one of those changes is written into the history like everyone else’s.'],
     ['Fixing a mistake', 'Tap any score to edit it. The old value is kept and shown in the history, so nothing quietly changes.'],
@@ -2271,7 +2370,7 @@ function showBowler(id){
         })))));
       }
     } else {
-      body.append(h('p.empty', {}, 'Every game so far was entered as just a score, so there is no ball-by-ball detail to show.'));
+      body.append(h('p.empty', {}, 'Every game so far was entered as just a final score, so there is no ball-by-ball detail to show.'));
     }
 
     body.append(sectionHead('Getting better?', 'Your rolling ten-game average.'));
@@ -2360,7 +2459,7 @@ function showGame(id){
   openSheet(`${who?.display_name || '?'} · ${g.total_score}`, body => {
     body.append(h('p.small.muted', { style:{ margin:'12px 0' } },
       `Game ${g.game_no} at ${g.session?.house || 'the alley'} on ${dateLabel(g.played_on)}.`));
-    if (g.entry_mode === 'pins' && g.rolls.length){
+    if (g.entry_mode !== 'quick' && g.rolls.length){
       body.append(card(scoreStrip(B.scoreRolls(g.rolls).frames)));
       const gs = B.gameStats(g.rolls);
       body.append(h('div.row.wrapf', {},
@@ -2541,7 +2640,7 @@ function tabSessions(){
    ====================================================================== */
 function subStats(games){
   const scores = games.map(g => g.total_score);
-  const per = games.filter(g => g.entry_mode === 'pins' && g.rolls.length).map(g => B.gameStats(g.rolls));
+  const per = games.filter(g => g.entry_mode !== 'quick' && g.rolls.length).map(g => B.gameStats(g.rolls));
   const roll = B.mergeStats(per);
   return {
     games: games.length, scores, avg: B.mean(scores), sd: B.stdev(scores),
@@ -2560,10 +2659,12 @@ function sessionStreaks(){
     for (const line of ses.lines){
       let run = 0, best = 0;
       for (const g of line.games){
-        if (g.entry_mode !== 'pins') { run = 0; continue; }
+        if (g.entry_mode === 'quick'){ run = 0; continue; }
+        const sofar = [];
         for (const r of B.ordered(g.rolls)){
-          if (r.standing_before === B.FULL && B.cnt(r.knocked) === 10){ run++; best = Math.max(best, run); }
-          else if (r.standing_before === B.FULL) run = 0;
+          const st = B.deckState(sofar); sofar.push(r);
+          if (!st.fullRack) continue;
+          if (B.fell(r) === 10){ run++; best = Math.max(best, run); } else run = 0;
         }
       }
       if (best) out.push({ id: line.id, name: line.name, best, session: ses });
@@ -2580,7 +2681,7 @@ function records(){
   R.series = withStats.map(s2 => ({ s:s2, v:s2.highSeries })).filter(x => x.v != null).sort((a,b) => b.v - a.v)[0] || null;
   let mostStrikes = null;
   for (const g of D.games){
-    if (g.entry_mode !== 'pins' || !g.rolls.length) continue;
+    if (g.entry_mode === 'quick' || !g.rolls.length) continue;
     const gs = B.gameStats(g.rolls);
     if (!mostStrikes || gs.strikes > mostStrikes.n) mostStrikes = { g, n: gs.strikes };
   }
@@ -2592,7 +2693,7 @@ function records(){
   let spare = null, improve = null;
   for (const ses of D.sessions){
     for (const line of ses.lines){
-      const pins = line.games.filter(g => g.entry_mode === 'pins' && g.rolls.length);
+      const pins = line.games.filter(g => g.entry_mode !== 'quick' && g.rolls.length);
       if (pins.length){
         const m = B.mergeStats(pins.map(g => B.gameStats(g.rolls)));
         if (m.spareChances >= 5){
