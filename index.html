@@ -208,6 +208,15 @@ input:focus,select:focus{border-color:var(--blue)}
 .deckbtns .btn{padding:12px 4px;font-size:13px}
 
 /* ---- money ---- */
+.rm{width:30px;height:30px;flex:none;border-radius:8px;background:var(--raised);border:1px solid var(--ring);
+  display:grid;place-items:center;color:var(--muted);font-size:14px;line-height:1}
+.rm:hover{color:var(--red);border-color:rgba(230,103,103,.5)}
+.whosin{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.whosin .chip{padding-right:4px}
+.payrow{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--grid);font-size:13.5px}
+.payrow:last-child{border-bottom:0}
+.payrow b{font-weight:750}
+.arrow{color:var(--muted)}
 .led{display:grid;grid-template-columns:1fr auto auto;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid var(--grid)}
 .led:last-child{border-bottom:0}
 .led .who{font-size:13.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -762,12 +771,29 @@ function settle(teams, { stake = 500, structure = 'winner' } = {}){
   return { amounts, balance: Object.values(amounts).reduce((s, v) => s + v, 0), ranked };
 }
 
+/* Turn a pile of nets into the fewest handovers that square everyone up.
+   Give the biggest debt to the biggest credit and work down. */
+function settleUp(nets){
+  const owed = Object.entries(nets).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]).map(e => [...e]);
+  const owes = Object.entries(nets).filter(([, c]) => c < 0).sort((a, b) => a[1] - b[1]).map(e => [...e]);
+  const out = [];
+  let i = 0, j = 0;
+  while (i < owes.length && j < owed.length){
+    const pay = Math.min(-owes[i][1], owed[j][1]);
+    if (pay > 0) out.push({ from: owes[i][0], to: owed[j][0], cents: pay });
+    owes[i][1] += pay; owed[j][1] -= pay;
+    if (owes[i][1] === 0) i++;
+    if (owed[j][1] === 0) j++;
+  }
+  return out;
+}
+
 window.BOWL = {
   FULL, bit, cnt, pinsOf, maskOf, ROW, XP, aheadOf,
   ordered, counts, fell, leaveMask, scoreCounts, scoreRolls, deckState, validateRolls,
   possibleScores, isPossibleScore, witness,
   isSplit, leaveName, gameStats, mergeStats,
-  pct, mean, stdev, handicap, commonLeaves, settle,
+  pct, mean, stdev, handicap, commonLeaves, settle, settleUp,
 };
 </script>
 
@@ -1015,6 +1041,16 @@ function stubDB(){
       D.edits.push({ id: D.edits.length+1, game_id:id, editor_id:user?.id, at:new Date().toISOString(), before:g, after:null });
       D.games = D.games.filter(x => x.id !== id); D.rolls = D.rolls.filter(r => r.game_id !== id);
     },
+    async renameGuest(id, name){ const g = D.guests.find(x => x.id === id); if (g) g.name = name.trim(); },
+    async deleteGuest(id){
+      D.guests = D.guests.filter(g => g.id !== id);
+      D.money = D.money.filter(m => m.guest_id !== id);
+    },
+    async deleteMoneyRows(ids){ const set = new Set(ids); D.money = D.money.filter(m => !set.has(m.id)); },
+    async updateMoneyRow(id, patch){ const m = D.money.find(x => x.id === id); if (m) Object.assign(m, patch); },
+    async removeSessionPlayer(session_id, profile_id){
+      D.players = D.players.filter(p => !(p.session_id === session_id && p.profile_id === profile_id));
+    },
     async addGuest(name){
       const found = D.guests.find(g => g.name.trim().toLowerCase() === name.trim().toLowerCase());
       if (found) return found;
@@ -1116,6 +1152,28 @@ async function liveDB(){
     },
     async deleteSession(id){
       const { error } = await sb.from('sessions').delete().eq('id', id);   // games and rolls cascade
+      if (error) throw error;
+    },
+    async renameGuest(id, name){
+      const { error } = await sb.from('guests').update({ name: name.trim() }).eq('id', id);
+      if (error) throw error;
+    },
+    async deleteGuest(id){
+      const { error } = await sb.from('guests').delete().eq('id', id);   // their money goes with them
+      if (error) throw error;
+    },
+    async deleteMoneyRows(ids){
+      if (!ids.length) return;
+      const { error } = await sb.from('money').delete().in('id', ids);
+      if (error) throw error;
+    },
+    async updateMoneyRow(id, patch){
+      const { error } = await sb.from('money').update(patch).eq('id', id);
+      if (error) throw error;
+    },
+    async removeSessionPlayer(session_id, profile_id){
+      const { error } = await sb.from('session_players').delete()
+        .eq('session_id', session_id).eq('profile_id', profile_id);
       if (error) throw error;
     },
     async addGuest(name){
@@ -3124,7 +3182,7 @@ function moneyLedger(ses){
   const totalFor = k => { let t = 0; for (let n = 1; n <= games; n++) t += cell(n, k); return t; };
 
   const strip = h('div.moneystrip', {});
-  function drawTotals(){
+  let drawTotals = function(){
     clear(strip);
     for (const k of [...keys].sort((a,b) => totalFor(b) - totalFor(a))){
       const t = totalFor(k);
@@ -3134,7 +3192,7 @@ function moneyLedger(ses){
     const bal = keys.reduce((s, k) => s + totalFor(k), 0);
     if (bal !== 0) strip.append(h('span.chip', { style:{ borderColor:'rgba(201,133,0,.5)' } },
       h('span.tiny.gold', {}, `off by ${money(bal)}`)));
-  }
+  };
   async function save(n){
     const payload = keys.map(k => ({ ...personRow(k), amount_cents: cell(n, k) }));
     try { await db.saveSettlement(ses.id, n, payload); await load(); }
@@ -3142,7 +3200,7 @@ function moneyLedger(ses){
   }
 
   function gameCard(n){
-    const cardEl = h('div.card', {});
+    const cardEl = h('div.card.gamecard', {});
     const marks = new Map();
     let stake = Number(localStorage.getItem('bowl.stake')) || 500;
     let showQuick = false;
@@ -3151,7 +3209,19 @@ function moneyLedger(ses){
       clear(cardEl);
       cardEl.append(h('div.spread', {},
         h('div.up', {}, 'Game ' + n),
-        h('button.btn.sm', { onclick(){ showQuick = !showQuick; drawCard(); } }, 'Quick fill')));
+        h('div.row', {},
+          h('button.btn.sm', { onclick(){ showQuick = !showQuick; drawCard(); } }, 'Quick fill'),
+          h('button.rm', { 'aria-label':'Clear game ' + n, async onclick(){
+            if (!confirm(`Clear game ${n}? Everything typed for it goes.`)) return;
+            const ids = state.money.filter(m => m.session_id === ses.id && m.game_no === n).map(m => m.id);
+            try {
+              await db.deleteMoneyRows(ids);
+              await load();
+              for (const k of keys) draft.delete(n + '|' + k);
+              if (n === games && games > 1){ games--; localStorage.setItem(gameCountKey(ses.id), games); }
+              drawTotals(); drawGames();
+            } catch (err){ toast(saveError(err)); }
+          } }, '✕'))));
 
       if (showQuick){
         const q = h('div', { style:{ marginTop:'10px' } },
@@ -3232,6 +3302,28 @@ function moneyLedger(ses){
   drawTotals();
   box.append(strip);
 
+  /* who is in, and how to take somebody back out */
+  const inRow = h('div.whosin', {});
+  box.append(inRow);
+  function drawWhosIn(){
+    clear(inRow);
+    for (const k of keys){
+      inRow.append(h('span.chip', {}, personName(k),
+        h('button.rm', { style:{ width:'22px', height:'22px', fontSize:'12px' },
+          'aria-label': 'Remove ' + personName(k),
+          async onclick(e){
+            e.stopPropagation();
+            if (!confirm(`Take ${personName(k)} out of this night? Their lines for tonight go with them.`)) return;
+            try {
+              await removeFromNight(ses.id, k);
+              keys = keys.filter(x => x !== k);
+              for (let n = 1; n <= games; n++) draft.delete(n + '|' + k);
+              drawWhosIn(); drawTotals(); drawGames();
+            } catch (err){ toast(saveError(err)); }
+          } }, '✕')));
+    }
+  }
+
   const gname = h('input', { type:'text', placeholder:'someone else’s name' });
   box.append(h('div.row', { style:{ margin:'10px 0' } }, gname,
     h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
@@ -3244,17 +3336,76 @@ function moneyLedger(ses){
         if (!keys.includes(k)) keys.push(k);
         gname.value = '';
         await save(1);
-        drawTotals(); drawGames();
+        drawWhosIn(); drawTotals(); drawGames();
         toast(`${g.name} is in`);
       } catch (err){ toast(saveError(err)); }
     } }, 'Add somebody')));
 
   drawGames();
   box.append(list);
+
+  /* who hands what to whom, so nobody works it out on a napkin */
+  const square = h('div', {});
+  function drawSquare(){
+    clear(square);
+    const nets = {};
+    for (const k of keys) nets[k] = totalFor(k);
+    const moves = B.settleUp(nets);
+    if (!moves.length) return;
+    square.append(sectionHead('Square up', 'The fewest handovers that settle everybody.'));
+    const rows2 = h('div.card', {}, moves.map(m =>
+      h('div.payrow', {}, h('b', {}, personName(m.from)), h('span.arrow', {}, '→'),
+        h('b', {}, personName(m.to)), h('b.n', { style:{ marginLeft:'auto' } }, moneyFlat(m.cents)))));
+    square.append(rows2);
+    square.append(h('button.btn.wide', { style:{ marginTop:'8px' }, onclick(){
+      const lines = [
+        `${dateLabel(ses.played_on)} · ${ses.house}`,
+        ...[...keys].sort((a,b) => totalFor(b) - totalFor(a)).map(k => `${personName(k)} ${money(totalFor(k))}`),
+        '',
+        ...moves.map(m => `${personName(m.from)} → ${personName(m.to)} ${moneyFlat(m.cents)}`),
+      ].join('\n');
+      navigator.clipboard?.writeText(lines).then(() => toast('Copied for the group chat'),
+                                                 () => toast('Could not copy on this browser'));
+    } }, 'Copy it for the group chat'));
+  }
+
+  const _drawTotals = drawTotals;
+  drawTotals = function(){ _drawTotals(); drawSquare(); };
+  drawWhosIn();
+  drawTotals();
+  box.append(square);
   box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
     'Saved as you type. This night stays in the book — open it again any time from the Money tab.'));
   box.append(glossary(MONEY_GLOSS));
   return box;
+}
+
+/* Take somebody out of one night: their lines go, and if they have an account
+   they come off the roster too so they do not reappear. */
+async function removeFromNight(sessionId, key){
+  const ids = state.money.filter(m => m.session_id === sessionId && personKey(m) === key).map(m => m.id);
+  await db.deleteMoneyRows(ids);
+  if (!personIsGuest(key)) await db.removeSessionPlayer(sessionId, key.slice(2));
+  await load();
+}
+/* Fold a guest's whole history into a real account, for when they finally
+   sign up. Lines that would collide on the same game are added together. */
+async function mergeGuestInto(guestId, profileId){
+  const rows = state.money.filter(m => m.guest_id === guestId);
+  const kill = [];
+  for (const r of rows){
+    const clash = state.money.find(m => m.profile_id === profileId
+      && m.session_id === r.session_id && m.game_no === r.game_no);
+    if (clash){
+      await db.updateMoneyRow(clash.id, { amount_cents: clash.amount_cents + r.amount_cents });
+      kill.push(r.id);
+    } else {
+      await db.updateMoneyRow(r.id, { profile_id: profileId, guest_id: null });
+    }
+  }
+  if (kill.length) await db.deleteMoneyRows(kill);
+  await db.deleteGuest(guestId);
+  await load();
 }
 
 /* ---- tonight: the book you are keeping right now ---- */
@@ -3348,6 +3499,44 @@ function tabMoney(){
     box.append(h('div.card', {}, lineChart(cum, { label:'dollars' })));
   }
 
+  if (state.user && state.guests.length){
+    box.append(sectionHead('Guests', 'People without an account. Rename them, hand their history to a real account when they make one, or take them out altogether.'));
+    for (const g of [...state.guests].sort((a,b) => a.name.localeCompare(b.name))){
+      const k = keyOfGuest(g.id);
+      const sum = moneySummaryKey(k);
+      const nameInput = h('input', { type:'text', value:g.name });
+      const pick = h('select', {}, h('option', { value:'' }, 'give their history to…'),
+        [...state.profiles].sort((a,b) => a.display_name.localeCompare(b.display_name))
+          .map(p => h('option', { value:p.id }, p.display_name)));
+      box.append(h('div.card', {},
+        h('div.row', {}, nameInput,
+          h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
+            const n = nameInput.value.trim();
+            if (!n){ toast('A guest needs a name.'); return; }
+            try { await db.renameGuest(g.id, n); await load(); toast('Renamed'); render(); }
+            catch (err){ toast(saveError(err)); }
+          } }, 'Rename')),
+        h('div.row.wrapf', { style:{ marginTop:'8px' } },
+          h('span.chip', {}, `${sum.nights} night${sum.nights === 1 ? '' : 's'}`),
+          h('span.chip', {}, h('b', { cls: sum.net > 0 ? 'good' : sum.net < 0 ? 'bad' : 'muted' }, money(sum.net)))),
+        h('div.row', { style:{ marginTop:'10px' } }, pick,
+          h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
+            if (!pick.value){ toast('Pick an account first.'); return; }
+            const who = D.profile.get(pick.value);
+            if (!confirm(`Move everything ${g.name} has won and lost onto ${who.display_name}? ${g.name} then goes away.`)) return;
+            try { await mergeGuestInto(g.id, pick.value); toast(`${g.name} is now ${who.display_name}`); render(); }
+            catch (err){ toast(saveError(err)); }
+          } }, 'Merge')),
+        h('button.btn.wide.danger', { style:{ marginTop:'10px' }, async onclick(){
+          if (!confirm(sum.nights
+            ? `Delete ${g.name}? Their ${sum.nights} night${sum.nights === 1 ? '' : 's'} and ${money(sum.net)} go too. If they are getting an account, merge instead.`
+            : `Delete ${g.name}?`)) return;
+          try { await db.deleteGuest(g.id); await load(); toast('Gone'); render(); }
+          catch (err){ toast(saveError(err)); }
+        } }, `Delete ${g.name}`)));
+    }
+  }
+
   box.append(sectionHead('Night by night', 'Tap one to open its book again.'));
   const bySession = new Map();
   for (const m of state.money){
@@ -3382,6 +3571,7 @@ const MONEY_GLOSS = [
   ['You can always type over it', 'Every number is an ordinary box you can edit. The quick fill is a shortcut, not a rule, and the site never changes a number you typed.'],
   ['It does not add up', 'If a game does not come to zero the site says so and leaves it alone. Uneven sides do that, and sometimes somebody covers the difference. It is your money.'],
   ['No scores needed', 'The book has nothing to do with logging scores. You can keep money for a night where nobody wrote a single game down.'],
+  ['Merging a guest', 'When somebody who has been a guest finally makes an account, hand their history over from the Money tab and every night they ever played goes onto the real account. Two lines for the same game are added together rather than one quietly winning.'],
   ['Guests', 'Somebody who bowls with you but has no account. Add them by name and they appear in the book and in the all-time totals like anyone else. The name is remembered, so the same guest next month adds to the same running total.'],
 ];
 

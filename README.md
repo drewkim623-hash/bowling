@@ -177,6 +177,17 @@ Two tabs, because they are two different jobs:
   running total over time, and every night listed so you can open one back up and fix it.
   Guests appear in it exactly like account holders.
 
+**Squaring up.** At the bottom of a night, the site works out the fewest handovers that settle
+everybody — four people owing each other becomes two people passing a note across the table.
+**Copy it for the group chat** puts the whole night, totals and handovers, on your clipboard.
+
+**Taking things back out.** The ✕ beside a name removes them from that night and takes their
+lines with them. The ✕ on a game clears that game. On the Money tab, a guest can be renamed,
+deleted, or **merged** into a real account when they finally sign up — every night they ever
+played moves across, and two lines for the same game are added together rather than one
+quietly winning. Scores are the same: tap any game to edit or delete it, and a whole session
+can be deleted from its own page.
+
 **Nobody is in charge.** Nothing is verified and nothing is approved. Anyone can log
 anything for anyone. But every game shows who entered it and when, every edit is written
 down and shown next to the game, and the home page has a feed of the last thirty things

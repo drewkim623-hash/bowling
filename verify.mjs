@@ -237,6 +237,24 @@ const T = (name, players, total) => ({ team:name, players, total });
 }
 eq('one team on its own is not a bet', B.settle([T('A',['a1'],300)], { stake:500 }).balance, 0);
 
+section('Squaring up at the end');
+{
+  const t = B.settleUp({ drew: 1500, nat: -500, tony: -500, mike: -500 });
+  eq('three people hand money to one', t.length, 3);
+  ok('and it all goes to the winner', t.every(x => x.to === 'drew'));
+  eq('five dollars each', t[0].cents, 500);
+}
+{
+  const t = B.settleUp({ a: 2000, b: 500, c: -1500, d: -1000 });
+  eq('bigger debts are matched to bigger credits first', t[0].from, 'c');
+  eq('and the total moved equals what was owed', t.reduce((s, x) => s + x.cents, 0), 2500);
+  ok('nobody hands over more than they lost',
+     ['c','d'].every(p => t.filter(x => x.from === p).reduce((s, x) => s + x.cents, 0) <= (p === 'c' ? 1500 : 1000)));
+}
+eq('an even night needs no handovers', B.settleUp({ a:0, b:0 }).length, 0);
+eq('a night that does not balance still settles what it can',
+   B.settleUp({ a: 1000, b: -500 }).reduce((s, x) => s + x.cents, 0), 500);
+
 /* The same game, entered as plain numbers with no idea which pins fell. */
 function numbersOnly(c){
   const rolls = [];
@@ -350,6 +368,7 @@ async function browserTests(){
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport:{ width:390, height:844 }, deviceScaleFactor:2 });
   const page = await ctx.newPage();
+  page.on('dialog', d => d.accept());     // the app asks before it deletes anything
   const noise = [];
   page.on('pageerror', e => noise.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') noise.push('console: ' + m.text()); });
@@ -584,8 +603,8 @@ async function browserTests(){
   ok('somebody with no account can be added by name',
      await page.locator('.person', { hasText:'Mike' }).count() === 1);
   await page.locator('button.btn.pri', { hasText:'Start keeping the book' }).click();
-  await page.waitForSelector('#panel .card .led');
-  const g1 = page.locator('#panel .card').first();
+  await page.waitForSelector('#panel .gamecard .led');
+  const g1 = page.locator('#panel .gamecard').first();
   eq('a line for everyone in, guest included', await g1.locator('.led').count(), 4);
   ok('and the guest is marked as one', /guest/i.test(await g1.innerText()));
   ok('the book needs no scores at all',
@@ -611,8 +630,8 @@ async function browserTests(){
      await page.evaluate(() => window.APP.state.money.some(m => m.guest_id && m.amount_cents === -500)));
 
   await page.locator('button.btn.wide', { hasText:'Another game' }).click();
-  eq('a second game appears', await page.locator('#panel .card').count(), 2);
-  const g2 = page.locator('#panel .card').nth(1);
+  eq('a second game appears', await page.locator('#panel .gamecard').count(), 2);
+  const g2 = page.locator('#panel .gamecard').nth(1);
   await g2.locator('.led input').first().fill('-3');
   await g2.locator('.led input').first().blur();
   await page.waitForTimeout(150);
@@ -627,6 +646,32 @@ async function browserTests(){
   ok('another guest can join halfway through the night',
      /Ash/.test(await page.locator('.moneystrip').innerText()));
 
+  section('Housekeeping');
+  ok('the square-up says who hands what to whom',
+     /square up/i.test(await page.locator('#panel').innerText()));
+  const pay = await page.locator('.payrow').allInnerTexts();
+  ok('and it is the fewest handovers that settle everybody', pay.length === 3, JSON.stringify(pay));
+  ok('the handovers point at the person who is up', pay.every(t => /Drew/.test(t)), JSON.stringify(pay));
+
+  const before = await page.evaluate(() => window.APP.state.money.length);
+  await page.locator('#panel .gamecard').nth(1).locator('button.rm').click();
+  await page.waitForTimeout(250);
+  ok('clearing a game removes only that game',
+     await page.evaluate(() => window.APP.state.money.length) < before);
+  ok('and the running total goes back', /\+\$15/.test(await page.locator('.moneystrip').innerText()));
+
+  await page.locator('.whosin .chip', { hasText:'Tony' }).locator('button.rm').click();
+  await page.waitForTimeout(250);
+  ok('somebody can be taken out of a night',
+     !/Tony/.test(await page.locator('.moneystrip').innerText()),
+     await page.locator('.moneystrip').innerText());
+  ok('and their lines go with them',
+     await page.evaluate(() => {
+       const sid = localStorage.getItem('bowl.money.night');
+       const tony = window.APP.state.profiles.find(p => p.display_name === 'Tony');
+       return !window.APP.state.money.some(m => m.session_id === sid && m.profile_id === tony.id);
+     }));
+
   await page.locator('button.btn.sm', { hasText:'Done' }).click();
   ok('done takes you back to starting a night', await page.locator('#panel input[placeholder="name"]').count() === 1);
 
@@ -637,9 +682,46 @@ async function browserTests(){
   ok('with the account holders', /Drew/.test(book));
   ok('and the guests alongside them', /Mike/.test(book), book.slice(0, 240));
   ok('a row per person in the all-time table',
-     await page.locator('#panel .rcard').count() >= 4);
+     await page.locator('#panel .rcard').count() >= 3);
   ok('no floating score button in the way of the book',
      await page.locator('.sticky-cta').count() === 0);
+
+
+  section('Guests can be tidied up');
+  await page.locator('#tabs .tab', { hasText:/^Money$/ }).click();
+  const mikeCard = page.locator('#panel .card', { hasText:'Delete Mike' });
+  await mikeCard.locator('input[type=text]').fill('Michael');
+  await mikeCard.locator('button.btn.sm', { hasText:'Rename' }).click();
+  await page.waitForTimeout(250);
+  ok('a guest can be renamed and keeps their money',
+     await page.evaluate(() => window.APP.state.guests.some(g => g.name === 'Michael')));
+  ok('the book shows the new name', /Michael/.test(await page.locator('#panel').innerText()));
+
+  const netBefore = await page.evaluate(() => {
+    const g = window.APP.state.guests.find(x => x.name === 'Michael');
+    const drew = window.APP.state.profiles.find(p => p.display_name === 'Drew');
+    const sum = k => window.APP.state.money.filter(k).reduce((s, m) => s + m.amount_cents, 0);
+    return { guest: sum(m => m.guest_id === g.id), drew: sum(m => m.profile_id === drew.id) };
+  });
+  const card2 = page.locator('#panel .card', { hasText:'Delete Michael' });
+  await card2.locator('select').selectOption({ label:'Drew' });
+  await card2.locator('button.btn.sm', { hasText:'Merge' }).click();
+  await page.waitForTimeout(400);
+  ok('merging a guest into an account moves every penny',
+     await page.evaluate(([b]) => {
+       const drew = window.APP.state.profiles.find(p => p.display_name === 'Drew');
+       const now = window.APP.state.money.filter(m => m.profile_id === drew.id)
+         .reduce((s, m) => s + m.amount_cents, 0);
+       return now === b.drew + b.guest;
+     }, [netBefore]));
+  ok('and the guest is gone afterwards',
+     await page.evaluate(() => !window.APP.state.guests.some(g => g.name === 'Michael')));
+
+  const ash = page.locator('#panel .card', { hasText:'Delete Ash' });
+  await ash.locator('button.btn.wide.danger').click();
+  await page.waitForTimeout(300);
+  ok('a guest can simply be deleted',
+     await page.evaluate(() => !window.APP.state.guests.some(g => g.name === 'Ash')));
 
   section('Phone manners');
   await page.locator('#tabs .tab', { hasText:/^Me$/ }).click();
