@@ -72,6 +72,11 @@ create table if not exists games (
   updated_at  timestamptz not null default now(),
   unique (session_id, profile_id, game_no)
 );
+-- Teams change between games, not just between nights: 3v3 for one game, then
+-- 2v2v2, then somebody sits out. The team on the game row is what counts; the
+-- one on session_players is only the starting line-up.
+alter table games add column if not exists team text check (team ~ '^[A-Z]$');
+
 create index if not exists games_profile_idx on games (profile_id);
 create index if not exists games_session_idx on games (session_id);
 
@@ -123,6 +128,25 @@ create table if not exists edits (
   after     jsonb
 );
 create index if not exists edits_game_idx on edits (game_id, at desc);
+
+-- ---------------------------------------------------------------- money
+-- What each person won or lost, per game. The site works out a proposal from
+-- the team scores and the stake, but every number is editable before it is
+-- saved, because the arrangement changes all night and sometimes people just
+-- decide something. Amounts are in cents and signed: +500 is five dollars won.
+create table if not exists money (
+  id          uuid primary key default gen_random_uuid(),
+  session_id  uuid not null references sessions(id) on delete cascade,
+  game_no     smallint,                  -- null means a whole-night adjustment
+  profile_id  uuid not null references profiles(id) on delete cascade,
+  amount_cents integer not null check (amount_cents between -1000000 and 1000000),
+  note        text,
+  created_by  uuid not null references profiles(id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+create unique index if not exists money_one_per_game
+  on money (session_id, game_no, profile_id) where game_no is not null;
+create index if not exists money_profile_idx on money (profile_id);
 
 -- ------------------------------------------------------------- triggers
 -- Runs as the table owner so it can write to edits while the edits policies
@@ -192,6 +216,7 @@ alter table session_players enable row level security;
 alter table games           enable row level security;
 alter table rolls           enable row level security;
 alter table edits           enable row level security;
+alter table money           enable row level security;
 
 -- profiles: everyone reads, you may only touch your own row
 drop policy if exists profiles_read   on profiles;
@@ -249,6 +274,21 @@ create policy rolls_update on rolls for update to authenticated using (
   exists (select 1 from games g where g.id = game_id and (g.profile_id = auth.uid() or g.logged_by = auth.uid() or is_commissioner())));
 create policy rolls_delete on rolls for delete to authenticated using (
   exists (select 1 from games g where g.id = game_id and (g.profile_id = auth.uid() or g.logged_by = auth.uid() or is_commissioner())));
+
+-- money: everyone reads. Anyone signed in may settle a game; the person who
+-- wrote the row, whoever started the session, and the commissioner may change it.
+drop policy if exists money_read   on money;
+drop policy if exists money_insert on money;
+drop policy if exists money_update on money;
+drop policy if exists money_delete on money;
+create policy money_read   on money for select using (true);
+create policy money_insert on money for insert to authenticated with check (created_by = auth.uid());
+create policy money_update on money for update to authenticated using (
+  created_by = auth.uid() or is_commissioner()
+  or exists (select 1 from sessions s where s.id = session_id and s.created_by = auth.uid()));
+create policy money_delete on money for delete to authenticated using (
+  created_by = auth.uid() or is_commissioner()
+  or exists (select 1 from sessions s where s.id = session_id and s.created_by = auth.uid()));
 
 -- edits: everyone reads — that is the entire point. Nobody writes directly,
 -- nobody updates, nobody deletes. Only the trigger above ever adds a row.

@@ -198,6 +198,45 @@ ok('you cannot knock down more pins than are standing',
    B.validateRolls([{ frame:1, roll:1, pins:7 }, { frame:1, roll:2, pins:5 }]) !== null);
 ok('a legal numbers game validates', B.validateRolls(numbersOnly(rep([10], 12))) === null);
 
+section('Who owes what');
+const T = (name, players, total) => ({ team:name, players, total });
+{
+  const r = B.settle([T('A',['a1','a2'],380), T('B',['b1','b2'],350), T('C',['c1','c2'],300)],
+                     { stake:500, structure:'winner' });
+  eq('2v2v2, winner takes the pot: each winner is up ten dollars', r.amounts.a1, 1000);
+  eq('and each loser is down five', r.amounts.b1, -500);
+  eq('the table balances', r.balance, 0);
+}
+{
+  const r = B.settle([T('A',['a1','a2'],380), T('B',['b1','b2'],350), T('C',['c1','c2'],300)],
+                     { stake:500, structure:'placement' });
+  eq('placement: the top team wins the stake', r.amounts.a1, 500);
+  eq('the middle team is level', r.amounts.b1, 0);
+  eq('the bottom team pays', r.amounts.c1, -500);
+  eq('and with even teams it still balances', r.balance, 0);
+}
+{
+  const r = B.settle([T('A',['a1','a2','a3'],540), T('B',['b1','b2'],350)],
+                     { stake:500, structure:'placement' });
+  eq('placement across a 3v2 does not balance, and says so', r.balance, 500);
+}
+{
+  const r = B.settle([T('A',['a1'],300), T('B',['b1'],300), T('C',['c1'],200)],
+                     { stake:600, structure:'winner' });
+  eq('a tie at the top splits the pot', r.amounts.a1, 300);
+  eq('both of them equally', r.amounts.b1, 300);
+  eq('paid by the team that lost', r.amounts.c1, -600);
+  eq('still balances', r.balance, 0);
+}
+{
+  const r = B.settle([T('A',['a1'],300), T('B',['b1'],300)], { stake:500, structure:'winner' });
+  eq('if everybody ties, no money moves', r.amounts.a1, 0);
+  const odd = B.settle([T('A',['a1','a2','a3'],400), T('B',['b1','b2'],300)], { stake:500, structure:'winner' });
+  eq('a pot that will not divide evenly still balances', odd.balance, 0);
+  eq('and nobody loses a cent to rounding', odd.amounts.a1 + odd.amounts.a2 + odd.amounts.a3, 1000);
+}
+eq('one team on its own is not a bet', B.settle([T('A',['a1'],300)], { stake:500 }).balance, 0);
+
 /* The same game, entered as plain numbers with no idea which pins fell. */
 function numbersOnly(c){
   const rolls = [];
@@ -323,7 +362,7 @@ async function browserTests(){
   ok('the page boots with the stubbed client', true);
   const engineTotal = await page.evaluate(() => window.BOWL.scoreCounts(Array(12).fill(10)).total);
   eq('the shipped engine scores a perfect game in the browser too', engineTotal, 300);
-  eq('every tab is on the tab strip', await page.locator('#tabs .tab').count(), 7);
+  eq('every tab is on the tab strip', await page.locator('#tabs .tab').count(), 8);
 
   section('Home');
   const leader = await page.locator('.champ').first().innerText();
@@ -409,7 +448,7 @@ async function browserTests(){
 
   section('Nothing overflows at 390px');
   for (const [id, label] of [['home','Home'],['log','Log'],['bowlers','Bowlers'],['sessions','Sessions'],
-                             ['records','Records'],['teams','Teams'],['me','Me']]){
+                             ['records','Records'],['teams','Teams'],['money','Money'],['me','Me']]){
     await page.locator('#tabs .tab', { hasText: new RegExp(`^${label}$`) }).click();
     await page.waitForTimeout(120);
     const over = await page.evaluate(() => ({
@@ -533,6 +572,39 @@ async function browserTests(){
      !(await page.locator('#panel .only-phone').first().isVisible()));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(120);
+
+  section('Settling up');
+  await page.locator('#tabs .tab', { hasText:'Sessions' }).click();
+  await page.locator('#panel .card', { hasText:'Mar 8' }).first().click();
+  await page.waitForSelector('.sheet .inner');
+  const g1 = page.locator('.sheet .card', { hasText:'Game 1' }).first();
+  await g1.locator('button', { hasText:'Settle this game' }).click();
+  ok('the settle form lists everyone who bowled that game',
+     await g1.locator('.rcard button.teamcyc').count() === 4);
+  const cyc = n => g1.locator('.rcard button.teamcyc').nth(n);
+  await cyc(0).click();                       // Drew  -> A
+  await cyc(2).click();                       // Tony  -> A
+  await cyc(1).click(); await cyc(1).click(); // Nat   -> B
+  await cyc(3).click(); await cyc(3).click(); // Bruce -> B
+  await g1.locator('.chip', { hasText:'$5' }).first().click();
+  const led = await g1.locator('.led').count();
+  eq('a ledger line for each of the four', led, 4);
+  const vals = await g1.locator('.led input').evaluateAll(ns => ns.map(n => n.value));
+  ok('the losing pair are down five each and the winners up five',
+     JSON.stringify(vals.slice().sort()) === JSON.stringify(['-5','-5','5','5']), JSON.stringify(vals));
+  await g1.locator('button', { hasText:'Save the money' }).click();
+  await page.waitForTimeout(200);
+  ok('the game shows as settled', /settled/i.test(await g1.innerText()));
+  await page.locator('.sheet .closebtn').first().click();
+
+  await page.locator('#tabs .tab', { hasText:'Money' }).click();
+  const moneyTab = await page.locator('#panel').innerText();
+  ok('the money tab shows who is up', /\+\$5/.test(moneyTab), moneyTab.slice(0, 160));
+  ok('and who is down', /−\$5/.test(moneyTab));
+  ok('the book lists a row per bowler with money on them',
+     await page.locator('#panel .rcard').count() >= 4);
+  ok('settling wrote the teams onto the games themselves',
+     await page.evaluate(() => window.APP.state.games.filter(g => g.team).length >= 4));
 
   section('Phone manners');
   await page.locator('#tabs .tab', { hasText:/^Me$/ }).click();

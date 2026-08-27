@@ -24,8 +24,10 @@ Four things to do. Twenty minutes, most of it waiting.
    takes a couple of minutes.
 
 > **Already set this up once?** Run `schema.sql` again. It is written to be safe to re-run,
-> and the newest version adds the commissioner, the split tag, and scoring by numbers instead
-> of pins. Nothing you have logged is touched — old games are migrated in place.
+> and the newest version adds the commissioner, the split tag, scoring by numbers instead of
+> pins, and the money book. Nothing you have logged is touched — old games are migrated in
+> place. If the site notices the database is behind, it says so on the Home tab and gives you
+> the exact SQL with a copy button.
 
 ### 2. Build the tables
 
@@ -144,6 +146,30 @@ what you picked last:
 - **Quick** — just the final score. Fast, and honest about it: those games get a small amber
   dot, and anything that needs to know what happened ball by ball quietly leaves them out
   rather than making something up.
+
+## The money
+
+Most nights have money on them, so the site keeps the book.
+
+When everybody finishes a game, the live view asks who was on whose team and what
+it was worth. Teams are recorded **per game**, not per night, because that is how it
+actually goes: 3v3 for one game, 2v2v2 the next, somebody sits one out. Tap the letter
+beside a name to move them.
+
+Two arrangements, both one tap:
+
+- **Winner takes it** — everyone on a losing team puts the stake in and the winning team
+  splits the pot. Four losing bowlers at $5 makes a $20 pot. Always balances to zero.
+- **Win / level / lose** — top team win the stake each, bottom team pay the stake each,
+  anyone in between is level. What you want with three teams.
+
+Then **every number is editable before it saves.** The site proposes, you decide — if the
+arrangement was odd that game, type over it. If the totals do not come to zero (uneven teams
+will do that) it says so and leaves your numbers alone rather than silently balancing them.
+
+The **Money** tab keeps the running book: who is up, who is down, best and worst nights,
+and a running total over time. A night you typed in later can be settled too — open it on
+the Sessions tab and each game has a Settle button.
 
 **Nobody is in charge.** Nothing is verified and nothing is approved. Anyone can log
 anything for anyone. But every game shows who entered it and when, every edit is written
