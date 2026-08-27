@@ -100,7 +100,7 @@ alter table rolls add column if not exists split boolean not null default false;
 alter table rolls alter column standing_before drop not null;
 alter table rolls alter column knocked         drop not null;
 -- fill in the count for anything logged before the column existed
-update rolls set pins = length(replace(knocked::bit(10)::text, '0', ''))
+update rolls set pins = length(replace(knocked::int::bit(10)::text, '0', ''))
   where pins is null and knocked is not null;
 alter table games drop constraint if exists games_entry_mode_check;
 alter table games add  constraint games_entry_mode_check check (entry_mode in ('pins','counts','quick'));
