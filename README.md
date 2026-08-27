@@ -152,7 +152,9 @@ what you picked last:
 The book is its own thing. It has nothing to do with logging scores, and you can keep
 it for a night where nobody writes down a single game.
 
-1. **Money** tab → **Start a money night**. Date, where, and who is in.
+1. **Tonight** tab. Date, where, and who is in — including anyone **without an account**:
+   type their name, tap **Add guest**, and they are in. A guest is remembered, so the same
+   person next month adds to the same running total.
 2. A card per game, a line per person. Type what they won or lost. It saves as you type
    and the running total sits at the top the whole time.
 3. **Another game** when you move on. **Done** when you are finished.
@@ -167,8 +169,13 @@ rule, and nothing you typed is ever recalculated behind your back. If a game doe
 zero the site says so and leaves it alone — uneven sides do that, and sometimes somebody
 covers the difference.
 
-The book keeps: who is up and who is down all time, best and worst nights, a running total
-over time, and every night listed so you can open one back up and fix it.
+Two tabs, because they are two different jobs:
+
+- **Tonight** is the book you are keeping right now. Start a night, or pick back up one you
+  left open. Somebody turning up late can be added mid-night.
+- **Money** is the history: who is up and who is down all time, best and worst nights, a
+  running total over time, and every night listed so you can open one back up and fix it.
+  Guests appear in it exactly like account holders.
 
 **Nobody is in charge.** Nothing is verified and nothing is approved. Anyone can log
 anything for anyone. But every game shows who entered it and when, every edit is written

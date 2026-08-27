@@ -362,7 +362,7 @@ async function browserTests(){
   ok('the page boots with the stubbed client', true);
   const engineTotal = await page.evaluate(() => window.BOWL.scoreCounts(Array(12).fill(10)).total);
   eq('the shipped engine scores a perfect game in the browser too', engineTotal, 300);
-  eq('every tab is on the tab strip', await page.locator('#tabs .tab').count(), 8);
+  eq('every tab is on the tab strip', await page.locator('#tabs .tab').count(), 9);
 
   section('Home');
   const leader = await page.locator('.champ').first().innerText();
@@ -448,7 +448,8 @@ async function browserTests(){
 
   section('Nothing overflows at 390px');
   for (const [id, label] of [['home','Home'],['log','Log'],['bowlers','Bowlers'],['sessions','Sessions'],
-                             ['records','Records'],['teams','Teams'],['money','Money'],['me','Me']]){
+                             ['records','Records'],['teams','Teams'],['money','Money'],
+                             ['tonight','Tonight'],['me','Me']]){
     await page.locator('#tabs .tab', { hasText: new RegExp(`^${label}$`) }).click();
     await page.waitForTimeout(120);
     const over = await page.evaluate(() => ({
@@ -574,31 +575,40 @@ async function browserTests(){
   await page.waitForTimeout(120);
 
   section('Keeping the book');
-  await page.locator('#tabs .tab', { hasText:'Money' }).click();
-  await page.locator('button.btn.pri', { hasText:'Start a money night' }).click();
+  await page.locator('#tabs .tab', { hasText:'Tonight' }).click();
   await page.locator('.person', { hasText:'Nat' }).first().click();
   await page.locator('.person', { hasText:'Tony' }).first().click();
+  await page.locator('#panel input[placeholder="name"]').fill('Mike');
+  await page.locator('button.btn.sm', { hasText:'Add guest' }).click();
+  await page.waitForTimeout(150);
+  ok('somebody with no account can be added by name',
+     await page.locator('.person', { hasText:'Mike' }).count() === 1);
   await page.locator('button.btn.pri', { hasText:'Start keeping the book' }).click();
   await page.waitForSelector('#panel .card .led');
   const g1 = page.locator('#panel .card').first();
-  eq('a line for everyone who is in', await g1.locator('.led').count(), 3);
+  eq('a line for everyone in, guest included', await g1.locator('.led').count(), 4);
+  ok('and the guest is marked as one', /guest/i.test(await g1.innerText()));
   ok('the book needs no scores at all',
-     await page.evaluate(() => window.APP.state.games.filter(g => g.session_id === window.APP.D.session.get(localStorage.getItem('bowl.money.night'))?.id).length === 0));
+     await page.evaluate(() => {
+       const sid = localStorage.getItem('bowl.money.night');
+       return window.APP.state.games.filter(g => g.session_id === sid).length === 0;
+     }));
 
   await g1.locator('button.btn.sm', { hasText:'Quick fill' }).click();
   await g1.locator('.chip', { hasText:'Drew' }).click();
   for (let i = 0; i < 2; i++) await g1.locator('.chip', { hasText:'Nat' }).click();
   for (let i = 0; i < 2; i++) await g1.locator('.chip', { hasText:'Tony' }).click();
+  for (let i = 0; i < 2; i++) await g1.locator('.chip', { hasText:'Mike' }).click();
   await g1.locator('.chip', { hasText:/^\$5$/ }).click();
   await g1.locator('button.btn.sm', { hasText:'Winners split the pot' }).click();
   const filled = await g1.locator('.led input').evaluateAll(ns => ns.map(n => n.value));
-  ok('two losers at five dollars makes the winner ten',
-     JSON.stringify(filled.slice().sort()) === JSON.stringify(['-5','-5','10']), JSON.stringify(filled));
+  ok('three losers at five dollars makes the winner fifteen',
+     JSON.stringify(filled.slice().sort()) === JSON.stringify(['-5','-5','-5','15']), JSON.stringify(filled));
   ok('the running total is up top straight away',
-     /\+\$10/.test(await page.locator('.moneystrip').innerText()),
+     /\+\$15/.test(await page.locator('.moneystrip').innerText()),
      await page.locator('.moneystrip').innerText());
-  ok('and it saved without being asked',
-     await page.evaluate(() => window.APP.state.money.length === 3));
+  ok('the guest owes money like everybody else',
+     await page.evaluate(() => window.APP.state.money.some(m => m.guest_id && m.amount_cents === -500)));
 
   await page.locator('button.btn.wide', { hasText:'Another game' }).click();
   eq('a second game appears', await page.locator('#panel .card').count(), 2);
@@ -607,17 +617,27 @@ async function browserTests(){
   await g2.locator('.led input').first().blur();
   await page.waitForTimeout(150);
   ok('typing a number by hand moves the running total',
-     /\+\$7/.test(await page.locator('.moneystrip').innerText()),
+     /\+\$12/.test(await page.locator('.moneystrip').innerText()),
      await page.locator('.moneystrip').innerText());
-  ok('a game that does not balance says so',
-     /not zero/i.test(await g2.innerText()), await g2.innerText());
+  ok('a game that does not balance says so', /not zero/i.test(await g2.innerText()));
+
+  await page.locator('#panel input[placeholder="someone else’s name"]').fill('Ash');
+  await page.locator('button.btn.sm', { hasText:'Add somebody' }).click();
+  await page.waitForTimeout(200);
+  ok('another guest can join halfway through the night',
+     /Ash/.test(await page.locator('.moneystrip').innerText()));
 
   await page.locator('button.btn.sm', { hasText:'Done' }).click();
+  ok('done takes you back to starting a night', await page.locator('#panel input[placeholder="name"]').count() === 1);
+
+  section('The all-time book');
+  await page.locator('#tabs .tab', { hasText:/^Money$/ }).click();
   const book = await page.locator('#panel').innerText();
-  ok('the night lands in the book', /night by night/i.test(book));
-  ok('with everyone on it', /\+\$7/.test(book) && /−\$5/.test(book), book.slice(0, 200));
-  ok('the all-time table has a row per person',
-     await page.locator('#panel .rcard').count() >= 3);
+  ok('the night is in the book', /night by night/i.test(book));
+  ok('with the account holders', /Drew/.test(book));
+  ok('and the guests alongside them', /Mike/.test(book), book.slice(0, 240));
+  ok('a row per person in the all-time table',
+     await page.locator('#panel .rcard').count() >= 4);
   ok('no floating score button in the way of the book',
      await page.locator('.sticky-cta').count() === 0);
 

@@ -148,6 +148,26 @@ create unique index if not exists money_one_per_game
   on money (session_id, game_no, profile_id) where game_no is not null;
 create index if not exists money_profile_idx on money (profile_id);
 
+-- ---------------------------------------------------------------- guests
+-- People who turn up and bowl but never make an account. They still need a
+-- stable identity, otherwise "Mike owes twenty dollars" evaporates next week.
+create table if not exists guests (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null check (length(trim(name)) between 1 and 40),
+  created_by uuid references profiles(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists guests_name_uniq on guests (lower(trim(name)));
+
+-- A money row belongs to exactly one person: an account or a guest.
+alter table money add column if not exists guest_id uuid references guests(id) on delete cascade;
+alter table money alter column profile_id drop not null;
+do $$ begin
+  alter table money add constraint money_one_person check ((profile_id is null) <> (guest_id is null));
+exception when duplicate_object then null; end $$;
+create unique index if not exists money_one_per_game_guest
+  on money (session_id, game_no, guest_id) where game_no is not null and guest_id is not null;
+
 -- ------------------------------------------------------------- triggers
 -- Runs as the table owner so it can write to edits while the edits policies
 -- below refuse every direct insert.
@@ -217,6 +237,7 @@ alter table games           enable row level security;
 alter table rolls           enable row level security;
 alter table edits           enable row level security;
 alter table money           enable row level security;
+alter table guests          enable row level security;
 
 -- profiles: everyone reads, you may only touch your own row
 drop policy if exists profiles_read   on profiles;
@@ -289,6 +310,17 @@ create policy money_update on money for update to authenticated using (
 create policy money_delete on money for delete to authenticated using (
   created_by = auth.uid() or is_commissioner()
   or exists (select 1 from sessions s where s.id = session_id and s.created_by = auth.uid()));
+
+-- guests: everyone reads, anyone signed in may add one, the person who added
+-- them or the commissioner may rename or remove them.
+drop policy if exists guests_read   on guests;
+drop policy if exists guests_insert on guests;
+drop policy if exists guests_update on guests;
+drop policy if exists guests_delete on guests;
+create policy guests_read   on guests for select using (true);
+create policy guests_insert on guests for insert to authenticated with check (created_by = auth.uid());
+create policy guests_update on guests for update to authenticated using (created_by = auth.uid() or is_commissioner());
+create policy guests_delete on guests for delete to authenticated using (created_by = auth.uid() or is_commissioner());
 
 -- edits: everyone reads — that is the entire point. Nobody writes directly,
 -- nobody updates, nobody deletes. Only the trigger above ever adds a row.
