@@ -815,7 +815,7 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID()
    this file knows which one it is talking to.
    ====================================================================== */
 const state = {
-  ready:false, error:null, mode: STUB ? 'stub' : 'live',
+  ready:false, error:null, staleSchema:false, mode: STUB ? 'stub' : 'live',
   user:null, me:null,
   profiles:[], sessions:[], players:[], games:[], rolls:[], edits:[],
 };
@@ -969,6 +969,12 @@ async function liveDB(){
     kind:'live', sb,
     async init(){ const { data } = await sb.auth.getSession(); return data?.session?.user || null; },
     onChange(fn){ sb.auth.onAuthStateChange((_e, sess) => fn(sess?.user || null)); },
+    /* Cheapest possible probe: if this column is missing, the database is
+       running an older schema.sql than the page expects. */
+    async schemaReady(){
+      const { error } = await sb.from('rolls').select('pins').limit(1);
+      return !error;
+    },
     async loadAll(){
       const [profiles, sessions, players, games, rolls, edits] = await Promise.all([
         table('profiles'), table('sessions'), table('session_players'),
@@ -1626,8 +1632,8 @@ function entryScreen(){
       h('button.btn.sm', { onclick(){ LOG.entry = null; render(); } }, 'Back')));
 
     wrapEl.append(h('div.seg', { style:{ margin:'12px 0' } },
-      h('button', { 'aria-pressed': LOG.mode === 'pins', onclick(){ setMode('pins'); draw(); } }, 'Full — tap the pins'),
-      h('button', { 'aria-pressed': LOG.mode === 'quick', onclick(){ setMode('quick'); draw(); } }, 'Quick — just the score')));
+      h('button', { 'aria-pressed': LOG.mode === 'pins', onclick(){ setMode('pins'); draw(); } }, 'Ball by ball'),
+      h('button', { 'aria-pressed': LOG.mode === 'quick', onclick(){ setMode('quick'); draw(); } }, 'Just the final score')));
 
     if (LOG.mode === 'quick'){
       const input = h('input', { type:'number', min:0, max:300, inputmode:'numeric',
@@ -1694,10 +1700,19 @@ function entryScreen(){
       LOG.entry = null;
       toast(`${D.profile.get(g.profile_id)?.display_name || 'Game'} — ${total}`);
       render();
-    } catch (err){ toast('Could not save: ' + (err.message || err)); }
+    } catch (err){ toast(saveError(err)); }
   }
   draw();
   return wrapEl;
+}
+/* Postgres constraint names are not an error message anybody wants at a bowling alley. */
+function saveError(err){
+  const m = String(err && err.message || err);
+  if (/entry_mode_check|column .*(pins|split)|schema cache/i.test(m)){
+    state.staleSchema = true;
+    return 'Your database is a version behind — run the SQL shown on the Home tab, then save again.';
+  }
+  return 'Could not save: ' + m;
 }
 
 function startEntry(profile_id, game_no, existing){
@@ -1791,7 +1806,7 @@ async function saveLiveGame(b){
   try {
     await db.saveGame(g, rolls.map(rollRow), null);
     await load();
-  } catch (err){ toast('Could not save that game: ' + (err.message || err)); }
+  } catch (err){ toast(saveError(err)); }
 }
 function liveThrow(pins, mask){
   const b = LIVE.bowlers[LIVE.turn];
@@ -1999,8 +2014,31 @@ function sessionScores(){
   return box;
 }
 
+function staleSchemaCard(){
+  const sql = `alter table rolls add column if not exists pins  smallint;
+alter table rolls add column if not exists split boolean not null default false;
+alter table rolls alter column standing_before drop not null;
+alter table rolls alter column knocked         drop not null;
+update rolls set pins = length(replace(knocked::bit(10)::text, '0', ''))
+  where pins is null and knocked is not null;
+alter table games drop constraint if exists games_entry_mode_check;
+alter table games add  constraint games_entry_mode_check check (entry_mode in ('pins','counts','quick'));`;
+  return h('div.card', { style:{ borderColor:'rgba(230,103,103,.55)' } },
+    h('div.up', { style:{ color:'var(--red)' } }, 'The database is a version behind'),
+    h('p.small.ink2', { style:{ marginTop:'6px' } },
+      'Scores will not save until you run the latest schema.sql in the Supabase SQL editor. ' +
+      'Copy the lines below, paste them into the SQL editor and hit Run — it takes a second and touches nothing you have logged.'),
+    h('pre.mono.tiny', { style:{ marginTop:'10px', padding:'10px', background:'var(--raised)',
+      border:'1px solid var(--ring)', borderRadius:'10px', overflowX:'auto', whiteSpace:'pre' } }, sql),
+    h('button.btn.wide', { style:{ marginTop:'10px' }, onclick(){
+      navigator.clipboard?.writeText(sql).then(() => toast('Copied — paste it into the SQL editor'),
+                                               () => toast('Select the text above and copy it'));
+    } }, 'Copy the SQL'));
+}
+
 function tabLog(){
   const box = h('div', {});
+  if (state.staleSchema) box.append(staleSchemaCard());
   if (!state.user){
     box.append(sectionHead('Log a session', 'You need to be signed in to add scores. Reading is open to everyone.'));
     box.append(authCard());
@@ -2240,6 +2278,7 @@ function tabHome(){
       h('div.up', { style:{ color:'var(--red)' } }, 'Not connected yet'),
       h('p.small.ink2', { style:{ marginTop:'4px' } },
         'Open index.html, find the SUPA block near the top of the script, and paste in your Supabase URL and anon key. Step 3 of the README.')));
+  if (state.staleSchema) box.append(staleSchemaCard());
   if (state.user && !profileComplete(state.me)) box.append(profileSetup());
 
   const all = [...D.stats.values()];
@@ -2986,6 +3025,7 @@ async function boot(reload){
     });
   }
   state.user = await db.init();
+  state.staleSchema = db.schemaReady ? !(await db.schemaReady()) : false;
   if (STUB && window.__STUB_USER) state.user = window.__STUB_USER;
   await load();
   const hash = location.hash.slice(1);

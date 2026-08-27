@@ -397,7 +397,7 @@ async function browserTests(){
 
   section('Quick entry');
   await page.locator('button.btn', { hasText:'Log game' }).first().click();
-  await page.locator('button', { hasText:'Quick — just the score' }).click();
+  await page.locator('.seg button', { hasText:'Just the final score' }).click();
   await page.locator('input[type=number]').fill('301');
   await page.locator('button.btn.pri', { hasText:'Save this game' }).click();
   ok('301 is refused', (await page.locator('#panel .err').innerText()).includes('not a score'));
