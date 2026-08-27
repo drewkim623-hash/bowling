@@ -149,27 +149,26 @@ what you picked last:
 
 ## The money
 
-Most nights have money on them, so the site keeps the book.
+The book is its own thing. It has nothing to do with logging scores, and you can keep
+it for a night where nobody writes down a single game.
 
-When everybody finishes a game, the live view asks who was on whose team and what
-it was worth. Teams are recorded **per game**, not per night, because that is how it
-actually goes: 3v3 for one game, 2v2v2 the next, somebody sits one out. Tap the letter
-beside a name to move them.
+1. **Money** tab → **Start a money night**. Date, where, and who is in.
+2. A card per game, a line per person. Type what they won or lost. It saves as you type
+   and the running total sits at the top the whole time.
+3. **Another game** when you move on. **Done** when you are finished.
 
-Two arrangements, both one tap:
+**Quick fill** is there for the usual case: tap each name until it says won or lost, pick
+the stake, and it fills the numbers in. *Winners split the pot* means everyone who lost puts
+the stake in and the winners share it — two losers at $10 makes the winner $20 between them.
+*Flat* means everyone who won takes the stake and everyone who lost pays it.
 
-- **Winner takes it** — everyone on a losing team puts the stake in and the winning team
-  splits the pot. Four losing bowlers at $5 makes a $20 pot. Always balances to zero.
-- **Win / level / lose** — top team win the stake each, bottom team pay the stake each,
-  anyone in between is level. What you want with three teams.
+Every number stays an ordinary box you can type over. The quick fill is a shortcut, never a
+rule, and nothing you typed is ever recalculated behind your back. If a game does not come to
+zero the site says so and leaves it alone — uneven sides do that, and sometimes somebody
+covers the difference.
 
-Then **every number is editable before it saves.** The site proposes, you decide — if the
-arrangement was odd that game, type over it. If the totals do not come to zero (uneven teams
-will do that) it says so and leaves your numbers alone rather than silently balancing them.
-
-The **Money** tab keeps the running book: who is up, who is down, best and worst nights,
-and a running total over time. A night you typed in later can be settled too — open it on
-the Sessions tab and each game has a Settle button.
+The book keeps: who is up and who is down all time, best and worst nights, a running total
+over time, and every night listed so you can open one back up and fix it.
 
 **Nobody is in charge.** Nothing is verified and nothing is approved. Anyone can log
 anything for anyone. But every game shows who entered it and when, every edit is written

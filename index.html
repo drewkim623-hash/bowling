@@ -2073,21 +2073,6 @@ function liveView(){
       h('div.up', {}, `Game ${LIVE.gameNo} done`),
       h('div', { style:{ marginTop:'6px' } }, barRows(rows.map((r,i) => ({
         label: r.b.name, value: r.total, text: int(r.total), color: i === 0 ? 'gd' : '' }))))));
-    const settled = (D.moneyByGame.get(ses.id + '|' + LIVE.gameNo) || []).length > 0;
-    box.append(h('div.card', { style:{ marginTop:'12px' } },
-      h('h2', { style:{ fontSize:'16px' } }, settled ? 'The money' : 'Settle up'),
-      h('p.sub', { style:{ margin:'2px 0 12px' } },
-        settled ? 'Already sorted for this game. Change anything you like.'
-                : 'Who was on whose team, and what it costs.'),
-      settleForm({
-        sessionId: ses.id, gameNo: LIVE.gameNo,
-        bowlers: LIVE.bowlers.map(b => {
-          const g = D.games.find(x => x.session_id === ses.id && x.profile_id === b.id && x.game_no === LIVE.gameNo);
-          return { id:b.id, name:b.name, score: B.scoreRolls(liveRolls(b, LIVE.gameNo)).total,
-                   gameId: g ? g.id : null, team: liveTeams(LIVE.gameNo)[b.id] || null };
-        }),
-        onDone(){ nextGame(); },
-      })));
     box.append(h('div.grid2', { style:{ marginTop:'12px' } },
       h('button.btn.pri.big', { onclick(){ nextGame(); } }, `Start game ${LIVE.gameNo + 1}`),
       h('button.btn.big', { onclick(){ endLive(); render(); toast('Saved. Nice night.'); } }, 'Finish up')));
@@ -2117,144 +2102,6 @@ function liveView(){
   }));
   box.append(h('p.tiny.muted', { style:{ textAlign:'center' } },
     'It moves to the next bowler on its own.'));
-  return box;
-}
-
-/* ======================================================================
-   SETTLING UP — who owes what for one game. Teams are set here too, because
-   they are what decides it, and they change from game to game.
-   ====================================================================== */
-function settleForm({ sessionId, gameNo, bowlers, onDone, compact }){
-  const box = h('div', {});
-  let stake = Number(localStorage.getItem('bowl.stake')) || 500;
-  let structure = localStorage.getItem('bowl.structure') === 'placement' ? 'placement' : 'winner';
-  const teamOf = new Map(bowlers.map(b => [b.id, b.team || null]));
-  const existing = D.moneyByGame.get(sessionId + '|' + gameNo) || [];
-  let manual = new Map(existing.map(m => [m.profile_id, m.amount_cents]));
-  let touched = existing.length > 0;
-
-  function teams(){
-    const map = new Map();
-    for (const b of bowlers){
-      const t = teamOf.get(b.id);
-      if (!t) continue;
-      if (!map.has(t)) map.set(t, { team:t, players:[], total:0 });
-      const e = map.get(t);
-      e.players.push(b.id); e.total += b.score;
-    }
-    return [...map.values()].sort((a, b) => b.total - a.total);
-  }
-  function proposed(){
-    const r = B.settle(teams(), { stake, structure });
-    return r;
-  }
-  function amounts(){
-    const p = proposed();
-    const out = {};
-    for (const b of bowlers) out[b.id] = touched && manual.has(b.id) ? manual.get(b.id) : (p.amounts[b.id] ?? 0);
-    return out;
-  }
-
-  function draw(){
-    clear(box);
-    const ts = teams();
-
-    box.append(h('div.up', {}, 'Teams for this game'));
-    box.append(h('div.rcards', { style:{ marginTop:'8px' } }, bowlers.map(b =>
-      h('div.rcard', {}, h('div.rc-top', {},
-        h('button.teamcyc', { 'data-t': teamOf.get(b.id) || '', onclick(){
-          const order = [null,'A','B','C','D'];
-          const i = order.indexOf(teamOf.get(b.id) || null);
-          teamOf.set(b.id, order[(i + 1) % order.length]);
-          touched = false; manual = new Map();
-          draw();
-        } }, teamOf.get(b.id) || '—'),
-        h('div.rc-title', { style:{ marginLeft:'8px' } }, b.name),
-        h('div.rc-main.n', {}, b.score))))));
-
-    if (ts.length < 2){
-      box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
-        'Put people into at least two teams and the money works itself out. Tap the letter next to a name.'));
-      if (onDone) box.append(h('button.btn.wide', { style:{ marginTop:'10px' }, onclick(){ onDone(); } }, 'Skip the money this game'));
-      return;
-    }
-
-    box.append(h('div.up', { style:{ marginTop:'16px' } }, 'The stake'));
-    const stakeRow = h('div.row.wrapf', { style:{ marginTop:'8px' } },
-      STAKES.map(v => h('button.chip' + (v === stake ? '.on' : ''), { onclick(){
-        stake = v; localStorage.setItem('bowl.stake', v); touched = false; manual = new Map(); draw();
-      } }, moneyFlat(v))));
-    const custom = h('input', { type:'number', min:0, step:'0.5', placeholder:'other',
-      style:{ width:'86px', padding:'7px 9px' },
-      onchange(e){
-        const v = Math.round(Number(e.target.value) * 100);
-        if (v >= 0){ stake = v; localStorage.setItem('bowl.stake', v); touched = false; manual = new Map(); draw(); }
-      } });
-    stakeRow.append(custom);
-    box.append(stakeRow);
-
-    box.append(h('div.seg', { style:{ marginTop:'12px' } },
-      h('button', { 'aria-pressed': String(structure === 'winner'), onclick(){
-        structure = 'winner'; localStorage.setItem('bowl.structure', structure); touched = false; manual = new Map(); draw();
-      } }, 'Winner takes it'),
-      h('button', { 'aria-pressed': String(structure === 'placement'), onclick(){
-        structure = 'placement'; localStorage.setItem('bowl.structure', structure); touched = false; manual = new Map(); draw();
-      } }, 'Win / level / lose')));
-    box.append(h('p.tiny.muted', { style:{ marginTop:'6px' } }, structure === 'winner'
-      ? `Everyone on a losing team puts in ${moneyFlat(stake)} and the winning team splits it.`
-      : `Top team win ${moneyFlat(stake)} each, bottom team pay ${moneyFlat(stake)} each, anyone in between is level.`));
-
-    box.append(h('div', { style:{ marginTop:'14px' } }, barRows(ts.map((t, i) => ({
-      label: 'Team ' + t.team, value: t.total, text: int(t.total), color: i === 0 ? 'g' : '',
-      tipText: t.players.map(id => D.profile.get(id)?.display_name || '?').join(' + ') + ` — ${t.total} pins`,
-    })))));
-
-    const amt = amounts();
-    const ledger = h('div', { style:{ marginTop:'14px' } });
-    for (const b of bowlers){
-      if (!teamOf.get(b.id)) continue;
-      const input = h('input.n', { type:'number', step:'0.5', value: (amt[b.id] / 100).toFixed(2).replace(/\.00$/, ''),
-        onchange(e){
-          manual.set(b.id, Math.round(Number(e.target.value || 0) * 100));
-          touched = true;
-          drawTotals();
-        } });
-      ledger.append(h('div.led', {},
-        h('div.who', {}, b.name),
-        h('span.teamcyc', { 'data-t': teamOf.get(b.id) }, teamOf.get(b.id)),
-        h('div.amt', {}, input)));
-    }
-    box.append(h('div.up', { style:{ marginTop:'16px' } }, 'What everyone owes'), ledger);
-    const totals = h('div', {});
-    function drawTotals(){
-      clear(totals);
-      const a = amounts();
-      const bal = Object.values(a).reduce((s, v) => s + v, 0);
-      if (bal !== 0) totals.append(h('div.balwarn', {},
-        `These add up to ${money(bal)} rather than zero. That is fine if somebody is covering it — just checking you meant to.`));
-    }
-    drawTotals();
-    box.append(totals);
-
-    box.append(h('button.btn.pri.wide.big', { style:{ marginTop:'14px' }, async onclick(){
-      const a = amounts();
-      const rows = bowlers.filter(b => teamOf.get(b.id))
-        .map(b => ({ profile_id: b.id, amount_cents: a[b.id] || 0 }));
-      try {
-        const teamUpdates = bowlers.filter(b => b.gameId)
-          .map(b => ({ id: b.gameId, team: teamOf.get(b.id) || null }));
-        if (teamUpdates.length && db.setTeams) await db.setTeams(teamUpdates);
-        await db.saveSettlement(sessionId, gameNo, rows);
-        await load();
-        toast('Settled up');
-        if (onDone) onDone();
-        else render();
-      } catch (err){ toast(saveError(err)); }
-    } }, existing.length ? 'Update the money' : 'Save the money'));
-    if (onDone) box.append(h('button.btn.wide', { style:{ marginTop:'8px' }, onclick(){ onDone(); } },
-      existing.length ? 'Leave it as it is' : 'No money this game'));
-  }
-  draw();
   return box;
 }
 
@@ -2987,6 +2834,19 @@ function showSession(id){
           h('div.big.n', { style:{ fontSize:'22px', fontWeight:750 } }, ses.mvp.series),
           h('div.tiny.muted', {}, `${ses.mvp.n} games`)))));
     }
+    const cash = D.moneyBySession.get(ses.id) || [];
+    if (cash.length){
+      const net = new Map();
+      for (const m of cash) net.set(m.profile_id, (net.get(m.profile_id) || 0) + m.amount_cents);
+      body.append(sectionHead('The money'));
+      body.append(card(
+        h('div.row.wrapf', {}, [...net.entries()].sort((a,b) => b[1] - a[1]).map(([id, c]) =>
+          h('span.chip', {}, D.profile.get(id)?.display_name || '?', ' ',
+            h('b', { cls: c > 0 ? 'good' : c < 0 ? 'bad' : 'muted' }, money(c))))),
+        h('button.btn.sm.wide', { style:{ marginTop:'10px' }, onclick(){
+          closeSheet(); openMoneyNight(ses.id);
+        } }, 'Open the book for this night')));
+    }
     const rounds = D.roundsBySession.get(ses.id) || [];
     if (rounds.length){
       body.append(sectionHead('Game by game', 'Teams and money, per game.'));
@@ -3002,20 +2862,6 @@ function showSession(id){
           ms.length ? h('div.row.wrapf', { style:{ marginTop:'8px' } }, ms.map(m =>
             h('span.chip', {}, D.profile.get(m.profile_id)?.display_name || '?', ' ',
               h('b', { cls: m.amount_cents > 0 ? 'good' : m.amount_cents < 0 ? 'bad' : 'muted' }, money(m.amount_cents))))) : null);
-        if (state.user){
-          const open = h('div', {});
-          card2.append(h('button.btn.sm.wide', { style:{ marginTop:'10px' }, onclick(){
-            if (open.firstChild){ clear(open); return; }
-            open.append(settleForm({
-              sessionId: ses.id, gameNo: r.game_no,
-              bowlers: r.games.map(g => ({ id:g.profile_id, name: D.profile.get(g.profile_id)?.display_name || '?',
-                score: g.total_score, gameId: g.id,
-                team: g.team || D.teamOf.get(ses.id + '|' + g.profile_id) || null })),
-              /* rebuild the sheet so the ledger and the settled chip are current */
-              onDone(){ showSession(ses.id); },
-            }));
-          } }, ms.length ? 'Change the money' : 'Settle this game'), open);
-        }
         body.append(card2);
       }
     }
@@ -3091,16 +2937,223 @@ function moneySummary(pid){
 }
 
 /* ======================================================================
-   TAB — MONEY: the notes page, except it adds up and never gets lost
+   TAB — MONEY: the notes page, except it adds up and never gets lost.
+   Nothing here needs a single score to be logged.
    ====================================================================== */
+const MONEY = { session:null };
+function openMoneyNight(sid){
+  MONEY.session = D.session.get(sid) || null;
+  try { localStorage.setItem('bowl.money.night', sid); } catch {}
+  go('money');
+}
+function closeMoneyNight(){
+  MONEY.session = null;
+  try { localStorage.removeItem('bowl.money.night'); } catch {}
+  render();
+}
+const gameCountKey = sid => 'bowl.money.games.' + sid;
+
+function moneyNightForm(){
+  const box = h('div', {});
+  const today = new Date().toISOString().slice(0,10);
+  const date = h('input', { type:'date', value: today, max: today });
+  const house = h('input', { type:'text', list:'mhouses', value: HOUSES[0], placeholder:'Where?' });
+  const title = h('input', { type:'text', placeholder:'optional — “Tony’s revenge”' });
+  const chosen = new Set(state.me ? [state.me.id] : []);
+  const people = h('div.people', {});
+  function drawPeople(){
+    clear(people);
+    for (const p of [...state.profiles].sort((a,b) => a.display_name.localeCompare(b.display_name))){
+      const on = chosen.has(p.id);
+      people.append(h('button.person.tap', { style: on ? { borderColor:'var(--blue)' } : {},
+        onclick(){ on ? chosen.delete(p.id) : chosen.add(p.id); drawPeople(); } },
+        h('div.row', {}, avatar(p),
+          h('div', {}, h('div', { style:{ fontWeight:650, fontSize:'13px' } }, p.display_name),
+            h('div.tiny', { cls: on ? 'good' : 'muted' }, on ? 'in' : 'tap to add')))));
+    }
+  }
+  drawPeople();
+  box.append(
+    sectionHead('Start a night', 'Who is here. Money only — no scores needed.'),
+    card(h('label.f', {}, h('span', {}, 'Date'), date),
+      h('label.f', {}, h('span', {}, 'Where'), house),
+      h('datalist', { id:'mhouses' }, HOUSES.map(x => h('option', { value:x }))),
+      h('label.f', {}, h('span', {}, 'Title'), title)),
+    sectionHead('Who is in?'),
+    card(people),
+    h('button.btn.pri.wide.big', { style:{ marginTop:'14px' }, async onclick(){
+      if (!chosen.size){ toast('Pick at least one person.'); return; }
+      const row = { id: uid(), played_on: date.value || today, house: house.value.trim() || HOUSES[0],
+        title: title.value.trim() || null, created_by: state.user.id, created_at: new Date().toISOString() };
+      try {
+        await db.createSession(row, [...chosen].map(profile_id => ({ profile_id, team:null })));
+        await load();
+        openMoneyNight(row.id);
+      } catch (err){ toast(saveError(err)); }
+    } }, '💵  Start keeping the book'));
+  return box;
+}
+
+/* The book for one night. A column per game, a row per person, a running
+   total that never goes stale. Type over anything. */
+function moneyLedger(ses){
+  const box = h('div', {});
+  const rows = D.moneyBySession.get(ses.id) || [];
+  const ids = [...new Set([
+    ...(D.rosterOf.get(ses.id) || []).map(p => p.profile_id),
+    ...rows.map(r => r.profile_id),
+    ...(D.gamesBySession.get(ses.id) || []).map(g => g.profile_id),
+  ])];
+  const draft = new Map();
+  for (const m of rows) draft.set(m.game_no + '|' + m.profile_id, m.amount_cents);
+  let games = Math.max(1, ...rows.map(m => m.game_no || 1),
+                       Number(localStorage.getItem(gameCountKey(ses.id))) || 1);
+  const cell = (n, id) => draft.get(n + '|' + id) || 0;
+  const totalFor = id => { let t = 0; for (let n = 1; n <= games; n++) t += cell(n, id); return t; };
+
+  const strip = h('div.moneystrip', {});
+  function drawTotals(){
+    clear(strip);
+    for (const id of [...ids].sort((a,b) => totalFor(b) - totalFor(a))){
+      const t = totalFor(id);
+      strip.append(h('span.chip', {}, D.profile.get(id)?.display_name || '?', ' ',
+        h('b.up-amt', { cls: t > 0 ? 'good' : t < 0 ? 'bad' : 'muted' }, money(t))));
+    }
+    const bal = ids.reduce((s, id) => s + totalFor(id), 0);
+    if (bal !== 0) strip.append(h('span.chip', { style:{ borderColor:'rgba(201,133,0,.5)' } },
+      h('span.tiny.gold', {}, `off by ${money(bal)}`)));
+  }
+
+  async function save(n){
+    const payload = ids.map(id => ({ profile_id:id, amount_cents: cell(n, id) })).filter(r => r.amount_cents !== 0);
+    try { await db.saveSettlement(ses.id, n, payload); await load(); }
+    catch (err){ toast(saveError(err)); }
+  }
+
+  function gameCard(n){
+    const cardEl = h('div.card', {});
+    const marks = new Map();
+    let stake = Number(localStorage.getItem('bowl.stake')) || 500;
+    const quick = h('div', { style:{ display:'none' } });
+
+    function drawCard(){
+      clear(cardEl);
+      cardEl.append(h('div.spread', {},
+        h('div.up', {}, 'Game ' + n),
+        h('button.btn.sm', { onclick(){
+          quick.style.display = quick.style.display === 'none' ? 'block' : 'none';
+        } }, 'Quick fill')));
+
+      const q = h('div', { style:{ marginTop:'10px' } });
+      q.append(h('p.tiny.muted', {}, 'Tap each name until it says what they did, pick the stake, then fill.'));
+      const tags = h('div.row.wrapf', { style:{ marginTop:'8px' } });
+      for (const id of ids){
+        const state2 = marks.get(id) || '';
+        tags.append(h('button.chip' + (state2 === 'W' ? '.on' : ''), {
+          style: state2 === 'L' ? { borderColor:'rgba(230,103,103,.6)', color:'var(--red)' } : {},
+          onclick(){
+            const order = ['', 'W', 'L'];
+            marks.set(id, order[(order.indexOf(state2) + 1) % 3]);
+            drawCard();
+          } }, `${D.profile.get(id)?.display_name || '?'} ${state2 === 'W' ? 'won' : state2 === 'L' ? 'lost' : '·'}`));
+      }
+      q.append(tags);
+      q.append(h('div.row.wrapf', { style:{ marginTop:'8px' } }, STAKES.map(v =>
+        h('button.chip' + (v === stake ? '.on' : ''), { onclick(){
+          stake = v; localStorage.setItem('bowl.stake', v); drawCard();
+        } }, moneyFlat(v)))));
+      q.append(h('div.grid2', { style:{ marginTop:'10px' } },
+        h('button.btn.sm', { onclick(){ fill('pot'); } }, 'Winners split the pot'),
+        h('button.btn.sm', { onclick(){ fill('flat'); } }, `Flat ${moneyFlat(stake)} each`)));
+      quick.replaceChildren(q);
+      cardEl.append(quick);
+
+      const led = h('div', { style:{ marginTop:'10px' } });
+      for (const id of ids){
+        const input = h('input.n', { type:'number', step:'0.5',
+          value: cell(n, id) ? (cell(n, id) / 100).toFixed(2).replace(/\.00$/, '') : '',
+          placeholder:'0',
+          onchange(e){
+            draft.set(n + '|' + id, Math.round(Number(e.target.value || 0) * 100));
+            drawTotals(); save(n); drawCard();   // the running sum and the warning follow the edit
+          } });
+        led.append(h('div.led', {},
+          h('div.who', {}, D.profile.get(id)?.display_name || '?'),
+          h('span.tiny.muted', {}, cell(n, id) > 0 ? 'up' : cell(n, id) < 0 ? 'down' : ''),
+          h('div.amt', {}, input)));
+      }
+      cardEl.append(led);
+      const sum = ids.reduce((s, id) => s + cell(n, id), 0);
+      if (sum !== 0) cardEl.append(h('div.balwarn', {}, `This game adds up to ${money(sum)}, not zero.`));
+    }
+    function fill(mode){
+      const W = ids.filter(id => marks.get(id) === 'W');
+      const L = ids.filter(id => marks.get(id) === 'L');
+      if (!W.length || !L.length){ toast('Mark at least one winner and one loser.'); return; }
+      let amounts;
+      if (mode === 'pot'){
+        amounts = B.settle([{ team:'W', players:W, total:1 }, { team:'L', players:L, total:0 }],
+                           { stake, structure:'winner' }).amounts;
+      } else {
+        amounts = {};
+        W.forEach(id => amounts[id] = stake);
+        L.forEach(id => amounts[id] = -stake);
+      }
+      for (const id of ids) draft.set(n + '|' + id, amounts[id] || 0);
+      drawTotals(); save(n); drawCard();
+    }
+    drawCard();
+    return cardEl;
+  }
+
+  box.append(h('div.spread', {},
+    h('div', {}, h('h2', {}, dateLabel(ses.played_on)),
+      h('p.sub', {}, `${ses.house}${ses.title ? ' · ' + ses.title : ''}`)),
+    h('button.btn.sm', { onclick(){ closeMoneyNight(); } }, 'Done')));
+  drawTotals();
+  box.append(strip);
+  const list = h('div', {});
+  function drawGames(){
+    clear(list);
+    for (let n = 1; n <= games; n++) list.append(gameCard(n));
+    list.append(h('button.btn.wide', { style:{ marginTop:'6px' }, onclick(){
+      games++; localStorage.setItem(gameCountKey(ses.id), games); drawGames(); drawTotals();
+    } }, '＋  Another game'));
+  }
+  drawGames();
+  box.append(list);
+  box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
+    'Saved as you type. Come back to this night any time from the list below.'));
+  box.append(glossary(MONEY_GLOSS));
+  return box;
+}
+
 function tabMoney(){
   const box = h('div', {});
+  if (state.staleSchema) box.append(staleSchemaCard());
+  if (MONEY.session){ box.append(moneyLedger(MONEY.session)); return box; }
+
+  if (!state.user){
+    box.append(sectionHead('Money', 'Sign in to keep the book. Anyone can read it.'));
+  } else {
+    box.append(h('button.btn.pri.wide.big', { style:{ marginTop:'12px' },
+      onclick(){ MONEY.starting = true; render(); } }, '💵  Start a money night'));
+    if (MONEY.starting){ box.append(moneyNightForm()); MONEY.starting = false; }
+    const last = (() => { try { return localStorage.getItem('bowl.money.night'); } catch { return null; } })();
+    if (last && D.session.get(last))
+      box.append(h('button.card.tap', { style:{ display:'block', width:'100%', marginTop:'10px' },
+        onclick(){ openMoneyNight(last); } },
+        h('div.spread', {}, h('div', {}, h('div.up', {}, 'Last night you kept'),
+          h('div', { style:{ fontWeight:700 } }, dateLabel(D.session.get(last).played_on))),
+          h('span.chip.on', {}, 'Open the book'))));
+  }
+
   const rows = [...D.stats.values()].map(st => ({ st, name: st.name, profile: st.profile, ...moneySummary(st.id) }))
     .filter(r => r.nights > 0);
-  box.append(sectionHead('Money', 'Every night settled, added up. Nothing here is a guess — it is what somebody typed in at the alley.'));
+  box.append(sectionHead('The book', 'Every night settled, added up.'));
 
   if (!rows.length){
-    box.append(h('p.empty', {}, 'No money settled yet. Finish a game in the live lane and it will ask you who owes what.'));
+    box.append(h('p.empty', {}, 'Nothing in the book yet. Start a night and keep it as you go.'));
     box.append(glossary(MONEY_GLOSS));
     return box;
   }
@@ -3112,16 +3165,13 @@ function tabMoney(){
     tile('Up the most', money(top.net), top.name),
     tile('Down the most', money(bottom.net), bottom.name),
     mine ? tile('You', money(mine.net), `${mine.up} up, ${mine.down} down`)
-         : tile('Nights settled', int(new Set(state.money.map(m => m.session_id)).size), 'with money on them'),
+         : tile('Nights', int(new Set(state.money.map(m => m.session_id)).size), 'with money on them'),
     tile('Changed hands', moneyFlat(moved), 'all time'),
   ]));
-
   box.append(h('div.card', {}, divergingBars(ranked.map(r => ({
     label: r.name, value: r.net / 100,
     tipText: `${r.name}: ${money(r.net)} over ${r.nights} night${r.nights === 1 ? '' : 's'}`,
   })))));
-
-  box.append(sectionHead('The book'));
   box.append(h('div.card.pad0', {}, sortTable({
     initial:'net', dir:-1, cardMain:'net', onRow: r => showBowler(r.st.id),
     cols:[
@@ -3145,7 +3195,7 @@ function tabMoney(){
     box.append(h('div.card', {}, lineChart(cum, { label:'dollars' })));
   }
 
-  box.append(sectionHead('Night by night'));
+  box.append(sectionHead('Night by night', 'Tap one to open its book again.'));
   const bySession = new Map();
   for (const m of state.money){
     if (!bySession.has(m.session_id)) bySession.set(m.session_id, []);
@@ -3158,7 +3208,8 @@ function tabMoney(){
   for (const n of nights){
     const net = new Map();
     for (const m of n.ms) net.set(m.profile_id, (net.get(m.profile_id) || 0) + m.amount_cents);
-    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ showSession(n.sid); } },
+    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' },
+      onclick(){ openMoneyNight(n.sid); } },
       h('div.spread', {},
         h('div', { style:{ fontWeight:650 } }, dateLabel(n.ses.played_on)),
         h('span.chip', {}, n.ses.house)),
@@ -3170,13 +3221,14 @@ function tabMoney(){
   box.append(glossary(MONEY_GLOSS));
   return box;
 }
+
 const MONEY_GLOSS = [
+  ['The book', 'A night, a column per game, a row per person, and what they won or lost. Exactly the notes page, except it adds up and it is still there next week.'],
   ['Net', 'Everything you have won minus everything you have lost, since the first night anybody wrote it down.'],
-  ['Winner takes it', 'Everyone on a losing team puts the stake in and the winning team splits the pot. Four losing bowlers at $5 makes a $20 pot.'],
-  ['Win / level / lose', 'Top team win the stake each, bottom team pay the stake each, anyone in between is level. With three teams that is the usual arrangement.'],
-  ['Teams change every game', 'Who was on whose team is recorded per game, not per night, because that is how it actually goes — 3v3, then 2v2v2, then somebody sits one out.'],
-  ['It does not add up', 'If the numbers do not come to zero the site says so and leaves them alone. Uneven teams do that, and sometimes somebody covers the difference. It is your money.'],
-  ['Where the numbers come from', 'The site proposes them from the team scores and the stake, and then anyone can type over any of them before saving. Nothing is worked out behind your back.'],
+  ['Quick fill', 'Tap the names until each says won or lost, pick the stake, and it fills the numbers in. Winners split the pot means the losers each put the stake in and the winners share it; flat means everyone who won takes the stake and everyone who lost pays it.'],
+  ['You can always type over it', 'Every number is an ordinary box you can edit. The quick fill is a shortcut, not a rule, and the site never changes a number you typed.'],
+  ['It does not add up', 'If a game does not come to zero the site says so and leaves it alone. Uneven sides do that, and sometimes somebody covers the difference. It is your money.'],
+  ['No scores needed', 'The book has nothing to do with logging scores. You can keep money for a night where nobody wrote a single game down.'],
 ];
 
 /* ======================================================================
@@ -3514,9 +3566,10 @@ function render(){
     next.append(h('div.card', {}, h('h2', {}, 'Something broke'), h('p.small.muted', {}, String(err && err.message || err))));
   }
   panel.replaceChildren(next);
-  document.body.classList.toggle('focus', current === 'log' && !!(LIVE.session || LOG.entry));
+  document.body.classList.toggle('focus',
+    (current === 'log' && !!(LIVE.session || LOG.entry)) || (current === 'money' && !!MONEY.session));
   const cta = clear($('#cta-root'));
-  if (state.user && current !== 'log' && current !== 'home' && profileComplete(state.me))
+  if (state.user && !['log','home','money'].includes(current) && profileComplete(state.me))
     cta.append(h('div.sticky-cta', {}, h('button.btn.pri.big', { onclick(){ go('log'); } }, '＋  Log a session')));
 }
 async function boot(reload){
