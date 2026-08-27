@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0b0f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Avengers">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
 <title>Avengers Bowling</title>
 <meta name="description" content="The record book, leaderboard and trophy case for Avengers Bowling.">
 <style>
@@ -22,15 +31,18 @@
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--plane);color:var(--ink);
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.45;
-  overflow-x:hidden}
-button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left}
-input,select{font:inherit}
+  overflow-x:hidden;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left;
+  touch-action:manipulation;-webkit-user-select:none;user-select:none}
+/* 16px or iOS zooms the whole page the moment you tap a field */
+input,select,textarea{font-family:inherit;font-size:16px}
 a{color:var(--blue)}
 h1,h2,h3,p,dl,dd,dt,figure{margin:0}
 /* every number in the building lines up */
 .n,table,.tile .big,.big,.mono,.strip,input[type=number],.spark,.lb{font-variant-numeric:tabular-nums}
 .mono{font-family:var(--mono)}
-.wrap{width:100%;max-width:820px;margin:0 auto;padding:0 var(--pad) 130px}
+.wrap{width:100%;max-width:820px;margin:0 auto;
+  padding:0 var(--pad) calc(130px + env(safe-area-inset-bottom))}
 .muted{color:var(--muted)}.ink2{color:var(--ink-2)}
 .small{font-size:12.5px}.tiny{font-size:11.5px}
 .up{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
@@ -51,12 +63,14 @@ h1,h2,h3,p,dl,dd,dt,figure{margin:0}
 .hero .tagline{color:var(--muted);font-size:13px;margin-top:7px}
 
 /* ---- tabs ---- */
-.tabs{position:sticky;top:0;z-index:40;margin:0 calc(-1*var(--pad));padding:8px var(--pad);
+.tabs{position:sticky;top:0;z-index:40;margin:0 calc(-1*var(--pad));
+  padding:8px var(--pad) 8px;
   background:rgba(11,11,15,.88);backdrop-filter:saturate(140%) blur(10px);border-bottom:1px solid var(--ring)}
 .tabs .strip2{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
 .tabs .strip2::-webkit-scrollbar{display:none}
-.tab{white-space:nowrap;padding:8px 14px;border-radius:999px;background:var(--raised);
-  border:1px solid var(--ring);color:var(--ink-2);font-size:13px;font-weight:650}
+.tab{white-space:nowrap;padding:10px 15px;min-height:42px;display:flex;align-items:center;
+  border-radius:999px;background:var(--raised);
+  border:1px solid var(--ring);color:var(--ink-2);font-size:13.5px;font-weight:650}
 .tab[aria-selected="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
 
 /* ---- cards ---- */
@@ -92,7 +106,7 @@ tbody tr.tap:hover td:first-child{background:var(--hover)}
 .rank{color:var(--muted);width:1px;padding-right:0}
 
 /* ---- buttons ---- */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 15px;
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 15px;min-height:44px;
   border-radius:var(--rs);background:var(--raised);border:1px solid var(--ring);font-weight:650;font-size:14px;
   text-align:center;transition:background .12s,border-color .12s}
 .btn:hover{background:var(--hover);border-color:rgba(57,135,229,.5)}
@@ -100,13 +114,14 @@ tbody tr.tap:hover td:first-child{background:var(--hover)}
 .btn.pri:hover{background:#4a92e8}
 .btn.wide{width:100%}
 .btn.big{padding:16px;font-size:16px}
-.btn.sm{padding:7px 11px;font-size:12.5px;border-radius:8px}
+.btn.sm{padding:7px 11px;min-height:36px;font-size:12.5px;border-radius:8px}
 .btn[disabled]{opacity:.4;pointer-events:none}
 .btn.danger{color:var(--red);border-color:rgba(230,103,103,.4)}
 .seg{display:flex;background:var(--raised);border:1px solid var(--ring);border-radius:999px;padding:3px;gap:3px}
-.seg button{flex:1;padding:8px 10px;border-radius:999px;font-size:13px;font-weight:650;color:var(--ink-2);text-align:center}
+.seg button{flex:1;padding:10px;min-height:42px;border-radius:999px;font-size:13px;font-weight:650;
+  color:var(--ink-2);text-align:center}
 .seg button[aria-pressed="true"]{background:var(--blue);color:#fff}
-.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;
+.chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
   background:var(--raised);border:1px solid var(--ring);font-size:11.5px;color:var(--ink-2)}
 .chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;flex:none}
@@ -192,18 +207,69 @@ input:focus,select:focus{border-color:var(--blue)}
 .deckbtns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
 .deckbtns .btn{padding:12px 4px;font-size:13px}
 
+/* ---- the live lane ---- */
+.mini{display:flex;flex-direction:column;gap:5px;margin:10px 0}
+.mrow{display:grid;grid-template-columns:60px 1fr;gap:7px;align-items:center;width:100%;
+  padding:6px;border-radius:10px;border:1px solid transparent;background:var(--surface)}
+.mrow.on{border-color:var(--blue);background:var(--raised)}
+.mrow.out{opacity:.5}
+.mname{min-width:0;overflow:hidden}
+.mname .nm{font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mname .tot{font-size:15px;font-weight:750;letter-spacing:-.02em;line-height:1.2;min-height:18px}
+.mgrid{display:grid;grid-template-columns:repeat(9,1fr) 1.34fr;gap:2px;min-width:0}
+.mfr{background:var(--mid);border-radius:4px;min-width:0;padding:1px 1px 2px;text-align:center}
+.mfr.cur{outline:1.5px solid var(--blue);outline-offset:-1px}
+.mfr .mk{display:flex;justify-content:center;gap:1px;min-height:11px;line-height:11px}
+.mfr .mk b{font-size:9.5px;font-weight:800}
+.mfr .mk b.x{color:#79b0f2}.mfr .mk b.s{color:#5fd0a8}
+.mfr .tt{font-size:10px;font-weight:700;min-height:12px;line-height:12px;color:var(--ink-2)}
+.upnext{display:flex;align-items:center;gap:10px;padding:12px;border-radius:var(--r);
+  background:linear-gradient(100deg,rgba(57,135,229,.22),rgba(57,135,229,.05));
+  border:1px solid rgba(57,135,229,.45);margin:10px 0}
+.upnext .who{font-size:19px;font-weight:750;letter-spacing:-.02em}
+.upnext .sc{margin-left:auto;text-align:right}
+.upnext .sc b{font-size:26px;font-weight:750;letter-spacing:-.02em;display:block;line-height:1}
+.deck.big{max-width:min(92vw,360px)}
+.boss{background:rgba(201,133,0,.16);border-color:rgba(201,133,0,.5);color:var(--gold)}
+
 /* ---- sheet (tap anyone, see everything) ---- */
 .sheet{position:fixed;inset:0;z-index:60;background:rgba(6,6,9,.72);backdrop-filter:blur(3px);
-  display:flex;align-items:flex-end;justify-content:center}
+  display:flex;align-items:flex-end;justify-content:center;overscroll-behavior:contain}
 .sheet .inner{background:var(--plane);border:1px solid var(--ring);border-radius:18px 18px 0 0;
-  width:100%;max-width:820px;max-height:92vh;overflow-y:auto;overflow-x:hidden;padding:0 var(--pad) 60px;
+  width:100%;max-width:820px;max-height:92vh;max-height:92dvh;overscroll-behavior:contain;
+  overflow-y:auto;overflow-x:hidden;padding:0 var(--pad) calc(60px + env(safe-area-inset-bottom));
   animation:up .18s ease-out}
 @keyframes up{from{transform:translateY(22px);opacity:.4}to{transform:none;opacity:1}}
 .sheet .grab{position:sticky;top:0;z-index:3;background:var(--plane);padding:12px 0 10px;
   display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid var(--ring)}
 .sheet .grab h2{font-size:17px;font-weight:750;letter-spacing:-.015em}
-.x{width:32px;height:32px;border-radius:50%;background:var(--raised);border:1px solid var(--ring);
+.closebtn{width:40px;height:40px;border-radius:50%;background:var(--raised);border:1px solid var(--ring);
   display:grid;place-items:center;flex:none;font-size:15px;color:var(--ink-2)}
+
+/* ---- logging takes over the screen: the hero is not the point at the alley ---- */
+body.focus .hero{display:none}
+body.focus .tabs{padding-top:calc(8px + env(safe-area-inset-top))}
+
+/* ---- rows become cards on a phone, tables on anything wider ---- */
+.rcards{display:flex;flex-direction:column;gap:8px}
+.rcard{display:block;width:100%;background:var(--surface);border:1px solid var(--ring);
+  border-radius:var(--r);padding:11px 12px}
+.rcard .rc-top{display:flex;align-items:center;gap:9px}
+.rcard .rc-title{font-weight:650;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rcard .rc-main{margin-left:auto;font-size:21px;font-weight:750;letter-spacing:-.02em;flex:none}
+.rcard .rc-meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+.rcard .rc-meta .chip{font-size:11px;padding:4px 8px}
+.rcard .rc-meta .chip b{color:var(--ink)}
+.sortbar{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;margin-bottom:9px}
+.sortbar::-webkit-scrollbar{display:none}
+.sortbar button{white-space:nowrap;padding:7px 11px;min-height:36px;border-radius:999px;background:var(--raised);
+  border:1px solid var(--ring);color:var(--ink-2);font-size:12px;font-weight:650}
+.sortbar button[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+.only-wide{display:none}
+@media (min-width:620px){
+  .only-wide{display:block}
+  .only-phone{display:none}
+}
 
 /* ---- misc ---- */
 .feed{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--grid);align-items:flex-start}
@@ -226,7 +292,7 @@ input:focus,select:focus{border-color:var(--blue)}
 <div class="wrap">
   <header class="hero">
     <h1>Avengers Bowling</h1>
-    <p class="tagline">The record book. Everyone logs their own scores. Nobody is the commissioner.</p>
+    <p class="tagline">The record book. Everyone logs their own scores. Every change is on the record.</p>
   </header>
   <nav class="tabs" aria-label="Sections"><div class="strip2" id="tabs" role="tablist"></div></nav>
   <main id="panel" role="tabpanel"></main>
@@ -833,6 +899,15 @@ function stubDB(){
       D.rolls = D.rolls.filter(r => r.game_id !== game.id);
       rs.forEach(r => D.rolls.push({ game_id: game.id, ...r }));
     },
+    async deleteSession(id){
+      for (const g of D.games.filter(x => x.session_id === id))
+        D.edits.push({ id: D.edits.length+1, game_id:g.id, editor_id:user?.id, at:new Date().toISOString(), before:g, after:null });
+      const gone = new Set(D.games.filter(x => x.session_id === id).map(g => g.id));
+      D.games = D.games.filter(x => x.session_id !== id);
+      D.rolls = D.rolls.filter(r => !gone.has(r.game_id));
+      D.players = D.players.filter(x => x.session_id !== id);
+      D.sessions = D.sessions.filter(x => x.id !== id);
+    },
     async deleteGame(id){
       const g = D.games.find(x => x.id === id);
       D.edits.push({ id: D.edits.length+1, game_id:id, editor_id:user?.id, at:new Date().toISOString(), before:g, after:null });
@@ -898,6 +973,10 @@ async function liveDB(){
     },
     async deleteGame(id){
       const { error } = await sb.from('games').delete().eq('id', id);
+      if (error) throw error;
+    },
+    async deleteSession(id){
+      const { error } = await sb.from('sessions').delete().eq('id', id);   // games and rolls cascade
       if (error) throw error;
     },
     async changePassword(password){
@@ -1242,13 +1321,20 @@ function stackBar(parts){
 }
 
 /* ----------------------------------------------------- sortable tables */
-function sortTable({ cols, rows, initial, dir = -1, onRow, empty = 'Nothing here yet.' }){
-  const host = h('div.scrollx', {});
+/* One set of column definitions, two renderings: a real table on a wide
+   screen, stacked cards on a phone. CSS picks; no resize listener needed. */
+function sortTable({ cols, rows, initial, dir = -1, onRow, cardMain, empty = 'Nothing here yet.' }){
+  const host = h('div', {});
+  const wide = h('div.scrollx.only-wide', {});
+  const phone = h('div.only-phone', {});
   let key = initial || cols[0].key, d = dir;
-  function draw(){
-    clear(host);
-    if (!rows.length){ host.append(h('p.empty', {}, empty)); return; }
-    const sorted = [...rows].sort((a, b) => {
+  const txt = (c, r) => {
+    if (c.cell) return c.cell(r);
+    const v = c.value(r);
+    return c.fmt ? c.fmt(v, r) : (v == null ? '—' : String(v));
+  };
+  function ordered(){
+    return [...rows].sort((a, b) => {
       const col = cols.find(c => c.key === key) || cols[0];
       const va = col.sort ? col.sort(a) : col.value(a), vb = col.sort ? col.sort(b) : col.value(b);
       if (va == null && vb == null) return 0;
@@ -1256,22 +1342,38 @@ function sortTable({ cols, rows, initial, dir = -1, onRow, empty = 'Nothing here
       if (vb == null) return -1;
       return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * d;
     });
+  }
+  function pick(c){ if (key === c.key) d = -d; else { key = c.key; d = c.text ? 1 : -1; } draw(); }
+  function draw(){
+    clear(wide); clear(phone); clear(host);
+    if (!rows.length){ host.append(h('p.empty', {}, empty)); return; }
+    const list = ordered();
+
     const thead = h('thead', {}, h('tr', {}, cols.map(c => {
       const th = h('th', c.key === key ? { 'aria-sort': d < 0 ? 'descending' : 'ascending' } : {});
-      th.append(h('button', { onclick(){ if (key === c.key) d = -d; else { key = c.key; d = c.text ? 1 : -1; } draw(); } },
-        c.label + (c.key === key ? (d < 0 ? ' ↓' : ' ↑') : '')));
+      th.append(h('button', { onclick(){ pick(c); } }, c.label + (c.key === key ? (d < 0 ? ' ↓' : ' ↑') : '')));
       return th;
     })));
-    const tbody = h('tbody', {}, sorted.map((r, i) => {
+    wide.append(h('table', {}, thead, h('tbody', {}, list.map(r => {
       const tr = h('tr', onRow ? { class:'tap', onclick(){ onRow(r); } } : {});
-      cols.forEach(c => tr.append(h('td', {}, c.cell ? c.cell(r, i) : fmtCell(c, r))));
+      cols.forEach(c => tr.append(h('td', {}, txt(c, r))));
       return tr;
-    }));
-    host.append(h('table', {}, thead, tbody));
-  }
-  function fmtCell(c, r){
-    const v = c.value(r);
-    return c.fmt ? c.fmt(v, r) : (v == null ? '—' : String(v));
+    }))));
+
+    const bar = h('div.sortbar', {}, cols.map(c =>
+      h('button', { 'aria-pressed': String(c.key === key), onclick(){ pick(c); } },
+        c.label + (c.key === key ? (d < 0 ? ' ↓' : ' ↑') : ''))));
+    const head = cols[0];
+    const main = (cardMain && cols.find(c => c.key === cardMain)) || cols[1];
+    const rest = cols.filter(c => c !== head && c !== main);
+    phone.append(bar, h('div.rcards', {}, list.map(r =>
+      h(onRow ? 'button.rcard.tap' : 'div.rcard', onRow ? { onclick(){ onRow(r); } } : {},
+        h('div.rc-top', {},
+          h('div.rc-title', {}, txt(head, r)),
+          main ? h('div.rc-main.n', {}, txt(main, r)) : null),
+        rest.length ? h('div.rc-meta', {}, rest.map(c =>
+          h('span.chip', {}, c.label, ' ', h('b.n', {}, txt(c, r))))) : null))));
+    host.append(wide, phone);
   }
   draw();
   return host;
@@ -1285,7 +1387,7 @@ function openSheet(title, build, sub){
   const inner = h('div.inner', {},
     h('div.grab', {},
       h('div', {}, h('h2', {}, title), sub ? h('p.sub.small.muted', {}, sub) : null),
-      h('button.x', { 'aria-label':'Close', onclick: closeSheet }, '✕')),
+      h('button.closebtn', { 'aria-label':'Close', onclick: closeSheet }, '✕')),
     body);
   const sheet = h('div.sheet', { onclick(e){ if (e.target === sheet) closeSheet(); } }, inner);
   root.append(sheet);
@@ -1325,27 +1427,68 @@ const LOG = {
 };
 function setMode(m){ LOG.mode = m; localStorage.setItem('bowl.mode', m); }
 
-/* ---- the pin deck ---- */
-function pinDeck({ standing, selected, onToggle }){
-  const W = 200, Hh = 150, R = 13;
+/* ---- the pin deck ----------------------------------------------------
+   Updates itself in place instead of re-rendering, which is what lets you
+   drag a finger across several pins in one go. */
+function makeDeck({ standing, onChange, big }){
+  const W = 200, Hh = 152, R = big ? 14 : 13;
   const cx = p => 100 + B.XP[p] * 17;
-  const cy = p => 125 - B.ROW[p] * 30;
-  const nodes = [1,2,3,4,5,6,7,8,9,10].map(p => {
-    const up = !!(standing & B.bit(p));
-    const on = !!(selected & B.bit(p));
-    const cls = !up ? 'pin locked' : (on ? 'pin down' : 'pin');
-    const g = s('g', { class:cls, role:'button', tabindex: up ? 0 : -1,
-      'aria-label': `pin ${p}${!up ? ' already down' : on ? ' knocked down' : ' standing'}`,
-      onclick(){ if (up) onToggle(p); },
-      onkeydown(e){ if (up && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); onToggle(p); } } },
-      s('circle', { cx:cx(p), cy:cy(p), r:R,
-        fill: !up ? 'var(--raised)' : (on ? 'var(--mid)' : '#eceaf3'),
-        stroke: on && up ? 'var(--blue)' : 'var(--ring)', 'stroke-width': on && up ? 2 : 1 }),
-      s('text', { x:cx(p), y:cy(p)+3.4, 'text-anchor':'middle',
-        fill: up && !on ? '#15151a' : 'var(--muted)' }, p));
-    return g;
+  const cy = p => 126 - B.ROW[p] * 30;
+  let sel = 0;
+  const parts = {};
+  const svg = s('svg', { class:'deck' + (big ? ' big' : ''), viewBox:`0 0 ${W} ${Hh}`, 'aria-label':'pin deck' });
+  for (const p of [1,2,3,4,5,6,7,8,9,10]){
+    const circle = s('circle', { cx:cx(p), cy:cy(p), r:R });
+    const label = s('text', { x:cx(p), y:cy(p) + 3.6, 'text-anchor':'middle' }, p);
+    const g = s('g', { class:'pin', 'data-pin':p, role:'button', tabindex:0,
+      onkeydown(e){ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(p); } } }, circle, label);
+    parts[p] = { g, circle, label };
+    svg.append(g);
+  }
+  function paint(){
+    for (const p of [1,2,3,4,5,6,7,8,9,10]){
+      const up = !!(standing & B.bit(p)), on = !!(sel & B.bit(p));
+      const { g, circle, label } = parts[p];
+      g.setAttribute('class', 'pin' + (!up ? ' locked' : on ? ' down' : ''));
+      g.setAttribute('tabindex', up ? 0 : -1);
+      g.setAttribute('aria-label', `pin ${p}${!up ? ' already down' : on ? ' knocked down' : ' standing'}`);
+      circle.setAttribute('fill', !up ? 'var(--raised)' : (on ? 'var(--mid)' : '#eceaf3'));
+      circle.setAttribute('stroke', on && up ? 'var(--blue)' : 'var(--ring)');
+      circle.setAttribute('stroke-width', on && up ? 2.4 : 1);
+      label.setAttribute('fill', up && !on ? '#15151a' : 'var(--muted)');
+    }
+  }
+  function toggle(p){
+    if (!(standing & B.bit(p))) return;
+    sel ^= B.bit(p);
+    if (navigator.vibrate) navigator.vibrate(8);
+    paint(); onChange(sel);
+  }
+  /* drag across the deck to take several pins down at once */
+  let dragging = false; const touched = new Set();
+  const at = e => {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const g = el && el.closest ? el.closest('g.pin') : null;
+    return g ? Number(g.getAttribute('data-pin')) : 0;
+  };
+  svg.addEventListener('pointerdown', e => {
+    const p = at(e); if (!p) return;
+    dragging = true; touched.clear(); touched.add(p);
+    try { svg.setPointerCapture(e.pointerId); } catch {}
+    toggle(p); e.preventDefault();
   });
-  return s('svg', { class:'deck', viewBox:`0 0 ${W} ${Hh}`, 'aria-label':'pin deck' }, nodes);
+  svg.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const p = at(e);
+    if (p && !touched.has(p)){ touched.add(p); toggle(p); }
+  });
+  const stop = () => { dragging = false; };
+  svg.addEventListener('pointerup', stop);
+  svg.addEventListener('pointercancel', stop);
+  paint();
+  svg.setSel = m => { sel = m & standing; paint(); onChange(sel); };
+  svg.getSel = () => sel;
+  return svg;
 }
 
 /* ---- one game's entry screen ---- */
@@ -1414,15 +1557,16 @@ function entryScreen(){
       h('button.btn', { disabled: !e.sel && !e.rolls.length,
         onclick(){ if (e.sel) e.sel = 0; else e.rolls.pop(); draw(); } }, 'Undo')));
 
-    e.sel = (e.sel || 0) & standing;
-    wrapEl.append(h('div.deckwrap', {}, pinDeck({
-      standing, selected: e.sel,
-      onToggle(p){ e.sel ^= B.bit(p); draw(); } })));
-
-    const n = B.cnt(e.sel);
-    wrapEl.append(h('button.btn.pri.wide.big', { style:{ marginTop:'6px' },
-      onclick(){ throwBall(e.sel); } },
-      n === 0 ? 'Nothing down — confirm' : `${n} down${n === B.cnt(standing) ? (standing === B.FULL ? ' — strike!' : ' — spare!') : ''} — confirm`));
+    const confirm = h('button.btn.pri.wide.big', { style:{ marginTop:'6px' },
+      onclick(){ throwBall(deck.getSel()); } });
+    const deck = makeDeck({ standing, onChange(sel){
+      e.sel = sel;
+      const n = B.cnt(sel);
+      confirm.textContent = n === 0 ? 'Nothing down — confirm'
+        : `${n} down${n === B.cnt(standing) ? (standing === B.FULL ? ' — strike!' : ' — spare!') : ''} — confirm`;
+    } });
+    deck.setSel(e.sel || 0);
+    wrapEl.append(h('div.deckwrap', {}, deck), confirm);
     wrapEl.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
       'Tap every pin you knocked over, then confirm. Dark pins were already down.'));
   }
@@ -1459,6 +1603,197 @@ function startEntry(profile_id, game_no, existing){
     : { profile_id, game_no, rolls: [], sel: 0 };
   if (existing) setMode(existing.entry_mode);
   render();
+}
+
+/* ======================================================================
+   LIVE SCORING — the lane view. One screen for everybody, a frame at a
+   time, the way you would actually keep score standing at the ball return.
+   ====================================================================== */
+const LIVE = { session:null, bowlers:[], gameNo:1, turn:0, history:[], saved:{} };
+const liveKey = id => 'bowl.live.' + id;
+const liveRolls = (b, n) => (b.games[n] = b.games[n] || []);
+const liveDone = (b, n) => B.deckState(liveRolls(b, n)).done;
+
+function persistLive(){
+  if (!LIVE.session) return;
+  try {
+    localStorage.setItem(liveKey(LIVE.session.id), JSON.stringify({
+      gameNo:LIVE.gameNo, turn:LIVE.turn, history:LIVE.history, saved:LIVE.saved,
+      /* the session row travels with it, so picking the night back up does not
+         depend on having loaded anything from the database first */
+      session: { id:LIVE.session.id, played_on:LIVE.session.played_on,
+                 house:LIVE.session.house, title:LIVE.session.title || null },
+      bowlers: LIVE.bowlers.map(b => ({ id:b.id, games:b.games })),
+    }));
+  } catch {}
+}
+function endLive(){
+  if (LIVE.session){ try { localStorage.removeItem(liveKey(LIVE.session.id)); } catch {} }
+  LIVE.session = null; LIVE.bowlers = []; LIVE.history = []; LIVE.saved = {};
+}
+function startLive(session, ids){
+  const ses = D.sessions.find(x => x.id === session.id) || session;
+  LIVE.session = ses;
+  LIVE.bowlers = ids.map(id => ({ id, name: D.profile.get(id)?.display_name || '?', games:{} }));
+  const played = (D.gamesBySession.get(ses.id) || []).map(g => g.game_no);
+  LIVE.gameNo = played.length ? Math.max(...played) + 1 : 1;
+  LIVE.turn = 0; LIVE.history = []; LIVE.saved = {};
+  persistLive();
+}
+function resumeLive(sessionId){
+  try {
+    const raw = localStorage.getItem(liveKey(sessionId));
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    const ses = D.sessions.find(x => x.id === sessionId) || d.session;
+    if (!ses) return false;
+    LIVE.session = ses;
+    LIVE.bowlers = (d.bowlers || []).map(b => ({ id:b.id, name: D.profile.get(b.id)?.display_name || '?', games: b.games || {} }));
+    LIVE.gameNo = d.gameNo || 1; LIVE.turn = d.turn || 0;
+    LIVE.history = d.history || []; LIVE.saved = d.saved || {};
+    return LIVE.bowlers.length > 0;
+  } catch { return false; }
+}
+function parkedLive(){
+  try {
+    for (let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('bowl.live.')) continue;
+      const d = JSON.parse(localStorage.getItem(k) || 'null');
+      if (d && d.session && (d.bowlers || []).length) return d.session;
+    }
+  } catch {}
+  return null;
+}
+function nextTurn(){
+  const n = LIVE.bowlers.length;
+  for (let i = 1; i <= n; i++){
+    const t = (LIVE.turn + i) % n;
+    if (!liveDone(LIVE.bowlers[t], LIVE.gameNo)){ LIVE.turn = t; return; }
+  }
+}
+async function saveLiveGame(b){
+  const rolls = liveRolls(b, LIVE.gameNo);
+  const key = b.id + '.' + LIVE.gameNo;
+  const g = {
+    id: LIVE.saved[key] || uid(), session_id: LIVE.session.id, profile_id: b.id,
+    game_no: LIVE.gameNo, total_score: B.scoreRolls(rolls).total, entry_mode:'pins',
+    logged_by: state.user.id, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  };
+  LIVE.saved[key] = g.id;
+  persistLive();
+  try {
+    await db.saveGame(g, rolls.map(r => ({ frame:r.frame, roll:r.roll, standing_before:r.standing_before, knocked:r.knocked })), null);
+    await load();
+  } catch (err){ toast('Could not save that game: ' + (err.message || err)); }
+}
+function liveThrow(mask){
+  const b = LIVE.bowlers[LIVE.turn];
+  const rolls = liveRolls(b, LIVE.gameNo);
+  const st = B.deckState(rolls);
+  if (st.done) return;
+  rolls.push({ frame:st.frame, roll:st.roll, standing_before:st.standing, knocked: mask & st.standing });
+  LIVE.history.push({ id:b.id, gameNo:LIVE.gameNo, turn:LIVE.turn });
+  const after = B.deckState(rolls);
+  persistLive();
+  if (after.done) saveLiveGame(b);
+  if (after.done || after.frame !== st.frame) nextTurn();
+  render();
+}
+async function liveUndo(){
+  const last = LIVE.history.pop();
+  if (!last) return;
+  const b = LIVE.bowlers.find(x => x.id === last.id);
+  if (!b) return;
+  const key = b.id + '.' + last.gameNo;
+  const wasSaved = LIVE.saved[key];
+  liveRolls(b, last.gameNo).pop();
+  LIVE.turn = last.turn; LIVE.gameNo = last.gameNo;
+  persistLive();
+  if (wasSaved){
+    delete LIVE.saved[key];
+    try { await db.deleteGame(wasSaved); await load(); toast('That game was already saved — the change is in its history.'); }
+    catch (err){ toast('Could not undo the saved game: ' + (err.message || err)); }
+  }
+  render();
+}
+
+function miniCard(){
+  const wrap = h('div.mini', {});
+  LIVE.bowlers.forEach((b, i) => {
+    const rolls = liveRolls(b, LIVE.gameNo);
+    const sc = B.scoreRolls(rolls);
+    const st = B.deckState(rolls);
+    wrap.append(h('button.mrow' + (i === LIVE.turn ? '.on' : '') + (st.done ? '.out' : ''),
+      { 'aria-label':`${b.name}, ${sc.total}`, onclick(){ if (!st.done){ LIVE.turn = i; persistLive(); render(); } } },
+      h('div.mname', {}, h('div.nm', {}, b.name),
+        h('div.tot.n', {}, sc.frames.some(f => f.score != null) ? sc.total : '')),
+      h('div.mgrid', {}, sc.frames.map(f =>
+        h('div.mfr' + (i === LIVE.turn && !st.done && st.frame === f.frame ? '.cur' : ''), {},
+          h('div.mk', {}, f.display.map(m => h('b' + (m === 'X' ? '.x' : m === '/' ? '.s' : ''), {}, m))),
+          h('div.tt.n', {}, f.score == null ? '' : f.score))))));
+  });
+  return wrap;
+}
+
+function liveView(){
+  const box = h('div', {});
+  const ses = LIVE.session;
+  box.append(h('div.spread', {},
+    h('div', {}, h('div.up', {}, `Game ${LIVE.gameNo} · live`),
+      h('div.small.muted', {}, `${shortDate(ses.played_on)} · ${ses.house}`)),
+    h('button.btn.sm', { onclick(){ endLive(); render(); toast('Parked. Everything finished is saved.'); } }, 'Pause')));
+  box.append(miniCard());
+
+  const everyone = LIVE.bowlers.every(b => liveDone(b, LIVE.gameNo));
+  if (everyone){
+    const rows = LIVE.bowlers.map(b => ({ b, total: B.scoreRolls(liveRolls(b, LIVE.gameNo)).total }))
+      .sort((x,y) => y.total - x.total);
+    box.append(h('div.champ', {},
+      h('div.up', {}, `Game ${LIVE.gameNo} done`),
+      h('div', { style:{ marginTop:'6px' } }, barRows(rows.map((r,i) => ({
+        label: r.b.name, value: r.total, text: int(r.total), color: i === 0 ? 'gd' : '' }))))));
+    box.append(h('div.grid2', { style:{ marginTop:'12px' } },
+      h('button.btn.pri.big', { onclick(){
+        LIVE.gameNo++; LIVE.turn = 0; persistLive(); render(); window.scrollTo({ top:0 });
+      } }, `Start game ${LIVE.gameNo + 1}`),
+      h('button.btn.big', { onclick(){ endLive(); render(); toast('Saved. Nice night.'); } }, 'Finish up')));
+    box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
+      'Every finished game is already in the record book. Tap any score on the Sessions tab to fix it.'));
+    return box;
+  }
+
+  const b = LIVE.bowlers[LIVE.turn];
+  const rolls = liveRolls(b, LIVE.gameNo);
+  const sc = B.scoreRolls(rolls);
+  const st = B.deckState(rolls);
+  const gs = B.gameStats(rolls);
+
+  box.append(h('div.upnext', {}, avatar(D.profile.get(b.id)),
+    h('div', {}, h('div.who', {}, b.name),
+      h('div.tiny.muted', {}, `frame ${st.frame} · ball ${st.roll} · ${B.cnt(st.standing)} standing`)),
+    h('div.sc', {}, h('b.n', {}, sc.frames.some(f => f.score != null) ? sc.total : '–'),
+      h('span.tiny.muted', {}, gs.strikes ? `${gs.strikes} strike${gs.strikes > 1 ? 's' : ''}` : 'no strikes yet'))));
+
+  const fresh = st.standing === B.FULL;
+  const confirm = h('button.btn.pri.wide.big', { style:{ marginTop:'6px' },
+    onclick(){ liveThrow(deck.getSel()); } });
+  const deck = makeDeck({ standing: st.standing, big:true, onChange(sel){
+    const n = B.cnt(sel);
+    confirm.textContent = n === 0 ? 'Nothing down — confirm'
+      : `${n} down${n === B.cnt(st.standing) ? (fresh ? ' — strike!' : ' — spare!') : ''} — confirm`;
+  } });
+  deck.setSel(0);
+
+  box.append(h('div.deckbtns', {},
+    h('button.btn', { disabled: !fresh, onclick(){ liveThrow(B.FULL); } }, 'Strike'),
+    h('button.btn', { disabled: fresh, onclick(){ liveThrow(st.standing); } }, 'Spare'),
+    h('button.btn', { onclick(){ liveThrow(0); } }, 'Gutter'),
+    h('button.btn', { disabled: !LIVE.history.length, onclick(){ liveUndo(); } }, 'Undo')));
+  box.append(h('div.deckwrap', {}, deck), confirm);
+  box.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
+    'Drag across the pins to take several down at once. It moves to the next bowler on its own.'));
+  return box;
 }
 
 /* ---- the session builder ---- */
@@ -1512,19 +1847,25 @@ function sessionForm(){
     card(teamToggle, h('div', { style:{ marginTop:'12px' } }, people),
       state.profiles.length < 2 ? h('p.tiny.muted', { style:{ marginTop:'10px' } },
         'Anyone else who bowls needs an account of their own — send them the site address and they can sign up in a minute.') : null),
-    h('button.btn.pri.wide.big', { style:{ marginTop:'14px' },
-      async onclick(){
-        if (!chosen.size){ toast('Pick at least one bowler.'); return; }
-        const row = { id: uid(), played_on: date.value || today, house: house.value.trim() || HOUSES[0],
-          title: title.value.trim() || null, created_by: state.user.id, created_at: new Date().toISOString() };
-        try {
-          await db.createSession(row, [...chosen.entries()].map(([profile_id, team]) => ({ profile_id, team })));
-          await load();
-          LOG.session = D.sessions.find(x => x.id === row.id) || sessionSummary(row);
-          LOG.step = 'scores';
-          render();
-        } catch (err){ toast('Could not start the session: ' + (err.message || err)); }
-      } }, 'Start logging scores'));
+    h('button.btn.pri.wide.big', { style:{ marginTop:'14px' }, onclick(){ begin(true); } },
+      '🎳  Score it live'),
+    h('button.btn.wide', { style:{ marginTop:'8px' }, onclick(){ begin(false); } },
+      'Type in scores afterwards'),
+    h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
+      'Live keeps score as you bowl and passes the phone round the group. The other way is for writing up a night that already happened.'));
+  async function begin(live){
+    if (!chosen.size){ toast('Pick at least one bowler.'); return; }
+    const row = { id: uid(), played_on: date.value || today, house: house.value.trim() || HOUSES[0],
+      title: title.value.trim() || null, created_by: state.user.id, created_at: new Date().toISOString() };
+    try {
+      await db.createSession(row, [...chosen.entries()].map(([profile_id, team]) => ({ profile_id, team })));
+      await load();
+      const ses = D.sessions.find(x => x.id === row.id) || sessionSummary(row);
+      if (live){ startLive(ses, [...chosen.keys()]); }
+      else { LOG.session = ses; LOG.step = 'scores'; }
+      render(); window.scrollTo({ top:0 });
+    } catch (err){ toast('Could not start the session: ' + (err.message || err)); }
+  }
   return box;
 }
 
@@ -1568,7 +1909,19 @@ function tabLog(){
   }
   if (!state.me || !state.me.display_name){ box.append(profileSetup()); return box; }
   if (LOG.entry) { box.append(entryScreen()); return box; }
+  if (LIVE.session){ box.append(liveView()); return box; }
   if (LOG.step === 'scores' && LOG.session){ box.append(sessionScores()); return box; }
+
+  const parked = parkedLive();
+  if (parked){
+    box.append(h('button.card.tap', { style:{ display:'block', width:'100%', borderColor:'rgba(57,135,229,.5)' },
+      onclick(){ if (resumeLive(parked.id)) { render(); window.scrollTo({ top:0 }); } } },
+      h('div.spread', {},
+        h('div', {}, h('div.up', {}, 'Still going'),
+          h('div', { style:{ fontWeight:700 } }, dateLabel(parked.played_on)),
+          h('div.tiny.muted', {}, parked.house)),
+        h('span.chip.on', {}, 'Pick it back up'))));
+  }
 
   const mine = D.sessions.filter(s => {
     const days = (Date.now() - new Date(s.played_on + 'T12:00:00').getTime()) / 864e5;
@@ -1588,6 +1941,7 @@ function tabLog(){
   box.append(sessionForm());
   box.append(glossary([GLOSS.quick,
     ['Who can log what', 'Anyone signed in can log a game for anyone else — one person usually enters the whole lane. The game always shows who entered it.'],
+    ['The commissioner', 'One person can fix or remove anybody’s games and sessions, for when a score goes in wrong and the person who typed it has gone home. Every one of those changes is written into the history like everyone else’s.'],
     ['Fixing a mistake', 'Tap any score to edit it. The old value is kept and shown in the history, so nothing quietly changes.'],
   ]));
   return box;
@@ -1597,6 +1951,11 @@ function tabLog(){
    ACCOUNTS
    ====================================================================== */
 const profileComplete = p => !!(p && p.display_name && p.hand && p.home_house);
+/* The commissioner. Enforced in the database by is_commissioner() in
+   schema.sql — this only decides which buttons to bother drawing. */
+const isBoss = () => !!(state.me && state.me.is_admin);
+const canEdit = g => !!(state.user && (state.user.id === g.profile_id || state.user.id === g.logged_by || isBoss()));
+const bossChip = () => h('span.chip.boss', {}, 'commissioner');
 
 function authCard(){
   const email = h('input', { type:'email', placeholder:'you@example.com', autocomplete:'email' });
@@ -1831,7 +2190,7 @@ function tabHome(){
   box.append(sectionHead('Handicap', 'So the rest of us have a chance. This is the second table, not the real one.'));
   box.append(h('div.card.pad0', {}, handicapTable(D.ranked.concat(D.unranked))));
 
-  box.append(sectionHead('Recent activity', 'Who logged what, for whom, and when. This is the whole enforcement mechanism.'));
+  box.append(sectionHead('Recent activity', 'Who logged what, for whom, and when. Nothing is approved by anybody — this feed is the enforcement.'));
   box.append(h('div.card', {}, activityFeed(30)));
 
   box.append(glossary([GLOSS.avg, GLOSS.games, GLOSS.high, GLOSS.series, GLOSS.c200, GLOSS.clean,
@@ -1856,7 +2215,8 @@ function showBowler(id){
   openSheet(st.name, body => {
     const p = st.profile;
     body.append(h('div.row', { style:{ margin:'14px 0' } }, avatar(p, true),
-      h('div', {}, h('div.small.ink2', {},
+      h('div', {}, p.is_admin ? h('div', { style:{ marginBottom:'4px' } }, bossChip()) : null,
+        h('div.small.ink2', {},
         [p.hand === 'L' ? 'Left-handed' : p.hand === 'R' ? 'Right-handed' : null,
          p.ball_weight ? p.ball_weight + ' lb ball' : null, p.home_house].filter(Boolean).join(' · ') || 'no profile details yet'),
         h('div.tiny.muted', {}, `${st.games} games · ${st.sessions} sessions · joined ${p.joined_at ? dateLabel(p.joined_at) : '—'}`))));
@@ -1977,7 +2337,7 @@ function streakName(n){
 }
 function gameTable(games){
   return sortTable({
-    initial:'score', dir:-1, onRow: g => showGame(g.id),
+    initial:'score', dir:-1, onRow: g => showGame(g.id), cardMain:'score',
     empty:'No games.',
     cols:[
       { key:'date', label:'Date', text:true, value:g => g.played_on, fmt:v => shortDate(v) },
@@ -1996,7 +2356,7 @@ function showGame(id){
   const g = D.games.find(x => x.id === id);
   if (!g) return;
   const who = D.profile.get(g.profile_id), by = D.profile.get(g.logged_by);
-  const mine = state.user && (state.user.id === g.profile_id || state.user.id === g.logged_by);
+  const mine = canEdit(g);
   openSheet(`${who?.display_name || '?'} · ${g.total_score}`, body => {
     body.append(h('p.small.muted', { style:{ margin:'12px 0' } },
       `Game ${g.game_no} at ${g.session?.house || 'the alley'} on ${dateLabel(g.played_on)}.`));
@@ -2026,6 +2386,9 @@ function showGame(id){
           h('div.tiny.muted', {}, dateLabel(e.at) + ' · ' + ago(e.at))));
       })) : h('p.tiny.muted', { style:{ marginTop:'8px' } }, 'Never edited.')));
     if (mine){
+      if (isBoss() && state.user.id !== g.profile_id && state.user.id !== g.logged_by)
+        body.append(h('p.tiny.muted', { style:{ marginTop:'12px' } },
+          'You are the commissioner, so you can change this one. It still goes in the history above.'));
       body.append(h('div.grid2', { style:{ marginTop:'14px' } },
         h('button.btn', { onclick(){
           closeSheet(); LOG.session = D.sessions.find(s2 => s2.id === g.session_id); LOG.step = 'scores';
@@ -2116,6 +2479,13 @@ function showSession(id){
         h('div', { style:{ textAlign:'right' } },
           h('div.big.n', { style:{ fontSize:'22px', fontWeight:750 } }, ses.mvp.series),
           h('div.tiny.muted', {}, `${ses.mvp.n} games`)))));
+    }
+    if (state.user && (ses.created_by === state.user.id || isBoss())){
+      body.append(h('button.btn.wide.danger', { style:{ marginTop:'14px' }, async onclick(){
+        if (!confirm(`Delete the whole session of ${dateLabel(ses.played_on)}, and all ${ses.games.length} games in it?`)) return;
+        try { await db.deleteSession(ses.id); await load(); closeSheet(); toast('Session deleted'); render(); }
+        catch (err){ toast('Could not delete: ' + (err.message || err)); }
+      } }, isBoss() && ses.created_by !== state.user.id ? 'Delete this session (commissioner)' : 'Delete this session'));
     }
     body.append(glossary([
       ['Series', 'Every game one person bowled that night, added up.'],
@@ -2416,6 +2786,11 @@ function tabMe(){
   }
   const st = D.stats.get(state.user.id);
   box.append(sectionHead('Your profile'));
+  if (isBoss()) box.append(h('div.card', {},
+    h('div.row.wrapf', {}, bossChip(),
+      h('span.small.ink2', {}, 'You can fix or delete anybody’s games and sessions.')),
+    h('p.tiny.muted', { style:{ marginTop:'8px' } },
+      'Every change you make is written into the game’s history exactly like everyone else’s. Handing the job to someone else is one line of SQL — it is in the README.')));
   box.append(profileSetup());
 
   if (st && st.games){
@@ -2491,6 +2866,7 @@ function render(){
     next.append(h('div.card', {}, h('h2', {}, 'Something broke'), h('p.small.muted', {}, String(err && err.message || err))));
   }
   panel.replaceChildren(next);
+  document.body.classList.toggle('focus', current === 'log' && !!(LIVE.session || LOG.entry));
   const cta = clear($('#cta-root'));
   if (state.user && current !== 'log' && current !== 'home' && profileComplete(state.me))
     cta.append(h('div.sticky-cta', {}, h('button.btn.pri.big', { onclick(){ go('log'); } }, '＋  Log a session')));

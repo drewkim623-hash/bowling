@@ -23,6 +23,10 @@ Four things to do. Twenty minutes, most of it waiting.
 3. Pick the region closest to you. Click **Create new project** and let it finish. It
    takes a couple of minutes.
 
+> **Already set this up once?** Run `schema.sql` again. It is written to be safe to
+> re-run, and the newest version adds the commissioner. Nothing you have logged is
+> touched.
+
 ### 2. Build the tables
 
 1. In your new project, click **SQL Editor** in the left sidebar.
@@ -32,6 +36,18 @@ Four things to do. Twenty minutes, most of it waiting.
 
 That one file creates every table, every rule about who is allowed to change what, and the
 trigger that writes down every edit anyone ever makes.
+
+**The commissioner.** The very first account to sign up becomes the commissioner — that will
+be you. A commissioner can fix or delete anybody's games and any whole session, which is for
+the night somebody types 132 instead of 213 and then goes home. It is not a quiet power: every
+change a commissioner makes lands in the same visible history as everyone else's, with their
+name on it. Nobody can promote themselves; the database refuses it. To hand the job over, or
+to take it back, run one line in the SQL editor:
+
+```sql
+update profiles set is_admin = true  where display_name = 'Nat';
+update profiles set is_admin = false where display_name = 'Drew';
+```
 
 ### 3. Connect the page to the database
 
@@ -63,7 +79,8 @@ must never put in this file is the one called **service_role**. Leave that one a
 2. Click the **+** in the top right → **New repository**. Name it `bowling`. Leave it
    **Public**. Click **Create repository**.
 3. On the next page click **uploading an existing file**.
-4. Drag `index.html`, `schema.sql` and `README.md` into the box. Click **Commit changes**.
+4. Drag `index.html`, `schema.sql`, `icon.png`, `manifest.json` and `README.md` into the box.
+   Click **Commit changes**.
 5. Click **Settings** (top of the repository) → **Pages** (left sidebar).
 6. Under "Branch", choose **main** and **/ (root)**. Click **Save**.
 7. Wait a minute, then refresh. GitHub shows you the address:
@@ -80,7 +97,7 @@ they are in. Anyone can read the whole record book without signing in at all.
 ```bash
 cd /Users/drewkim/Desktop/bowling
 git init
-git add index.html schema.sql README.md verify.mjs .gitignore
+git add index.html schema.sql icon.png manifest.json README.md verify.mjs .gitignore
 git commit -m "Avengers Bowling"
 git branch -M main
 git remote add origin https://github.com/YOUR-GITHUB-USERNAME/bowling.git
@@ -96,11 +113,20 @@ updates about a minute after you push.
 ## Using it
 
 **Logging scores.** Tap **Log**. You start with the session — the date, the alley, who
-bowled, and whether you split into teams. Then you log game 1 for everyone, game 2 for
-everyone, and so on. One person can enter the whole lane's scores in one sitting, which is
-how it actually happens.
+bowled, and whether you split into teams. Then pick how you want to do it:
 
-Each game is entered one of two ways, and the toggle remembers what you picked last:
+**Score it live.** The lane view. Everybody's scorecard sits across the top, the pin deck
+fills the bottom half, and it moves to the next bowler by itself the moment a frame is done.
+Tap the pins that fell — or drag one finger across several of them — and hit confirm. Strike,
+Spare and Gutter are one tap. Undo goes back a ball even if that means handing it back to the
+person before you. Each game is written to the record book the moment its tenth frame closes,
+and a game in progress survives locking your phone, a dead battery or closing the tab: come
+back to Log and it offers to pick the night back up. When everybody finishes, it offers you
+game 2.
+
+**Type in scores afterwards.** For writing up a night that already happened. Log game 1 for
+everyone, then game 2, and so on. Each game goes in one of two ways, and the toggle remembers
+what you picked last:
 
 - **Full** — tap the pins you knocked down, hit confirm, repeat. The score builds itself as
   you go and the strip underneath looks like the monitor above the lane. You cannot enter an
@@ -144,7 +170,13 @@ is broken.
 | `index.html` | The entire site — markup, styling and code. The only file the browser needs. |
 | `schema.sql` | The database. Paste into Supabase once. |
 | `verify.mjs` | The test harness. Never runs in the live site. |
+| `icon.png` | The home screen icon. |
+| `manifest.json` | Lets phones install it like an app. |
 | `README.md` | This. |
+
+**Put it on your home screen.** On an iPhone, open the site in Safari, tap the share button,
+then **Add to Home Screen**. On Android, Chrome offers it in the menu. It opens without the
+browser chrome, keeps the dark background, and looks like any other app on the phone.
 
 Inside `index.html` there are two script blocks. The first is the scoring engine: pure
 arithmetic, no page in sight, and the tests lift it straight out of the file and run it on

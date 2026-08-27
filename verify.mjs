@@ -199,7 +199,7 @@ function makeFixture(){
     { id:'nat',   display_name:'Nat',   handle:'nat'   },
     { id:'tony',  display_name:'Tony',  handle:'tony'  },
     { id:'bruce', display_name:'Bruce', handle:'bruce' },
-  ].map(p => ({ ...p, avatar_url:null, hand:'R', ball_weight:15,
+  ].map(p => ({ ...p, avatar_url:null, hand:'R', ball_weight:15, is_admin: p.id === 'me',
                 home_house:'Bowl America Fairfax', joined_at:'2025-01-01T00:00:00Z' }));
   const PAT = {
     179:[8,1, 7,3, 10, 9,0, 10, 10, 6,4, 8,2, 9,1, 10,7,2],
@@ -228,7 +228,11 @@ function makeFixture(){
         const gid = `${id}-${pid}-${i+1}`;
         const quick = !PAT[score];
         games.push({ id:gid, session_id:id, profile_id:pid, game_no:i+1, total_score:score,
-          entry_mode: quick ? 'quick' : 'pins', logged_by:'me',
+          entry_mode: quick ? 'quick' : 'pins',
+          /* the first night Drew typed in the whole lane; after that people
+             logged their own, which is what gives the commissioner something
+             to override */
+          logged_by: (pid === 'me' || id === 'ses1') ? 'me' : pid,
           created_at: `${played_on}T22:${10+i}:00Z`, updated_at: `${played_on}T22:${10+i}:00Z` });
         if (!quick) for (const r of rollsFromCounts(PAT[score])) rolls.push({ game_id:gid, ...r });
       });
@@ -238,6 +242,8 @@ function makeFixture(){
                before:{ total_score:88, profile_id:'nat' }, after:{ total_score:90, profile_id:'nat' } });
   return { profiles:P, sessions, players, games, rolls, edits };
 }
+
+function D_gamesNotMine(fx){ return `${fx.games.filter(g => g.profile_id !== 'me').length} games belong to other people`; }
 
 async function browserTests(){
   let chromium;
@@ -282,7 +288,7 @@ async function browserTests(){
   ok(`the gold banner shows the actual leader (${want.name})`, leader.includes(want.name), leader.replace(/\n/g, ' | '));
   ok('the highest game ever is on a tile', (await page.locator('.tiles').first().innerText()).includes('300'));
   ok('the leaderboard is sorted by average to start',
-     (await page.locator('#panel table tbody tr').first().innerText()).includes(want.name));
+     (await page.locator('#panel .rcard').first().innerText()).includes(want.name));
   ok('people short of six games get their own group',
      /not enough games yet/i.test(await page.locator('#panel').innerText()));
   ok('the handicap table is there and clearly second',
@@ -292,7 +298,7 @@ async function browserTests(){
   ok('every section explains itself',
      await page.locator('#panel details.gloss').count() > 0);
   ok('the trend column draws a sparkline per bowler',
-     await page.locator('#panel table svg.spark').count() >= 2);
+     await page.locator('#panel .rcards svg.spark').count() >= 2);
   ok('the leaderboard has all ten columns',
      await page.locator('#panel table').first().locator('thead th').count() === 10);
 
@@ -305,12 +311,12 @@ async function browserTests(){
     ok(`profile shows “${bit}”`, sheet.toLowerCase().includes(bit.toLowerCase()));
   ok('the profile draws a chart', await page.locator('.sheet svg.chart').count() > 0);
   ok('the profile draws the strike/spare/open bar', await page.locator('.sheet .stack').count() > 0);
-  await page.locator('.sheet .x').click();
+  await page.locator('.sheet .closebtn').click();
   await page.waitForSelector('.sheet', { state:'detached' });
 
   section('Score entry');
   await page.locator('#tabs .tab', { hasText:'Log' }).click();
-  await page.locator('button.btn.pri', { hasText:'Start logging scores' }).click();
+  await page.locator('button.btn', { hasText:'Type in scores afterwards' }).click();
   await page.locator('button.btn', { hasText:'Log game' }).first().click();
   await page.waitForSelector('svg.deck');
   ok('the pin deck draws all ten pins', await page.locator('svg.deck g.pin').count() === 10);
@@ -361,11 +367,122 @@ async function browserTests(){
     ok(`${label}: renders something`, (await page.locator('#panel').innerText()).length > 80);
   }
   await page.locator('#tabs .tab', { hasText:'Bowlers' }).click();
-  await page.locator('#panel table tbody tr').first().click();
+  await page.locator('#panel .rcard').first().click();
   await page.waitForSelector('.sheet .inner');
   const sheetOver = await page.evaluate(() => document.documentElement.scrollWidth);
   ok('an open profile sheet does not scroll sideways either', sheetOver <= 390, `${sheetOver}px`);
-  await page.locator('.sheet .x').click();
+  await page.locator('.sheet .closebtn').click();
+
+  section('The live lane');
+  await page.locator('#tabs .tab', { hasText:/^Log$/ }).click();
+  const leave = page.locator('button.btn.sm', { hasText:'Done' });
+  if (await leave.count()) await leave.first().click();
+  await page.locator('.person', { hasText:'Nat' }).click();
+  await page.locator('button.btn.pri', { hasText:'Score it live' }).click();
+  await page.waitForSelector('.mini .mrow');
+  eq('a scorecard row for each bowler', await page.locator('.mini .mrow').count(), 2);
+  ok('the hero gets out of the way while you score', !(await page.locator('.hero').isVisible()));
+  const first = await page.locator('.upnext .who').innerText();
+  await page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ }).click();
+  const second = await page.locator('.upnext .who').innerText();
+  ok('a finished frame passes it to the next bowler', first !== second, `${first} then ${second}`);
+  ok('the strike lands on the right scorecard',
+     (await page.locator('.mini .mrow').first().innerText()).includes('X'));
+  await page.locator('button.btn:not([disabled])', { hasText:'Undo' }).click();
+  eq('undo hands it back to whoever threw', await page.locator('.upnext .who').innerText(), first);
+
+  const box = async n => {
+    const b = await page.locator(`svg.deck g.pin[data-pin="${n}"] circle`).boundingBox();
+    return [b.x + b.width/2, b.y + b.height/2];
+  };
+  await page.locator('svg.deck').scrollIntoViewIfNeeded();
+  const [x7,y7] = await box(7), [x8,y8] = await box(8), [x9,y9] = await box(9), [x10,y10] = await box(10);
+  await page.mouse.move(x7, y7);
+  await page.mouse.down();
+  await page.mouse.move(x8, y8, { steps: 4 });
+  await page.mouse.move(x9, y9, { steps: 4 });
+  await page.mouse.move(x10, y10, { steps: 4 });
+  await page.mouse.up();
+  ok('dragging across the deck takes every pin you touch',
+     (await page.locator('button.btn.pri', { hasText:'confirm' }).innerText()).includes('4 down'),
+     await page.locator('button.btn.pri', { hasText:'confirm' }).innerText());
+  for (const n of [7,8,9,10]) await page.locator(`svg.deck g.pin[data-pin="${n}"]`).click();
+  ok('tapping them again puts them back up',
+     (await page.locator('button.btn.pri', { hasText:'confirm' }).innerText()).includes('Nothing down'));
+
+  await page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ }).click();
+  await page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ }).click();
+  await page.reload();
+  await page.waitForSelector('body[data-ready="1"]');
+  await page.locator('#tabs .tab', { hasText:/^Log$/ }).click();
+  ok('a half-finished game survives closing the page',
+     /still going/i.test(await page.locator('#panel').innerText()));
+  await page.locator('.card', { hasText:'Pick it back up' }).click();
+  await page.waitForSelector('.mini .mrow');
+  ok('and it comes back with the marks still on it',
+     (await page.locator('.mini').innerText()).includes('X'));
+
+  for (let i = 0; i < 30; i++){
+    const strike = page.locator('button.btn:not([disabled])', { hasText:/^Strike$/ });
+    if (!(await strike.count())) break;              // the game ended
+    await strike.click();
+  }
+  await page.waitForSelector('.champ');
+  const done = await page.locator('.champ').innerText();
+  ok('twelve strikes each ends the game at 300 apiece',
+     (done.match(/300/g) || []).length === 2, done.replace(/\n/g, ' | '));
+  ok('and it offers the next game', await page.locator('button', { hasText:'Start game 2' }).count() === 1);
+  await page.locator('button.btn.big', { hasText:'Finish up' }).click();
+  await page.locator('#tabs .tab', { hasText:'Home' }).click();
+  ok('the live games are in the record book',
+     (await page.locator('#panel').innerText()).includes('300'));
+
+  section('The commissioner');
+  const others = D_gamesNotMine(fixture);
+  await page.locator('#tabs .tab', { hasText:'Sessions' }).click();
+  await page.locator('#panel .card', { hasText:'Mar' }).first().click();
+  await page.waitForSelector('.sheet .inner');
+  ok('the commissioner can delete a session they did not create',
+     /delete this session/i.test(await page.locator('.sheet .inner').innerText()));
+  await page.locator('.sheet .closebtn').click();
+  await page.locator('#tabs .tab', { hasText:'Home' }).click();
+  await page.locator('.feed.tap', { hasText:'Tony' }).first().click();
+  await page.waitForSelector('.sheet .inner');
+  const gameSheet = await page.locator('.sheet .inner').innerText();
+  ok('that game was logged by somebody other than the commissioner',
+     /logged it themselves/.test(gameSheet), gameSheet.slice(0, 120));
+  ok('the commissioner can edit somebody else’s game', /commissioner/i.test(gameSheet), others);
+  ok('and the game still shows who logged it', /logged it|logged by|Drew/i.test(gameSheet));
+  await page.locator('.sheet .closebtn').first().click();
+
+  section('Phone rows, desktop tables');
+  ok('at 390px the sideways table is hidden',
+     !(await page.locator('#panel .only-wide').first().isVisible()));
+  ok('at 390px you get stacked cards instead',
+     await page.locator('#panel .rcards').first().isVisible());
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await page.waitForTimeout(120);
+  ok('on a wide screen the real table comes back',
+     await page.locator('#panel .only-wide table').first().isVisible());
+  ok('on a wide screen the cards are hidden',
+     !(await page.locator('#panel .only-phone').first().isVisible()));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(120);
+
+  section('Phone manners');
+  await page.locator('#tabs .tab', { hasText:/^Me$/ }).click();
+  const zoom = await page.evaluate(() => [...document.querySelectorAll('#panel input, #panel select')]
+    .map(n => parseFloat(getComputedStyle(n).fontSize)).filter(v => v < 16));
+  ok('no field small enough to make iOS zoom the page', zoom.length === 0, `${zoom.length} under 16px`);
+  const small = await page.evaluate(() => [...document.querySelectorAll('#tabs .tab, #panel .btn, #panel .seg button')]
+    .map(n => ({ t: n.textContent.trim().slice(0,18), h: Math.round(n.getBoundingClientRect().height) }))
+    .filter(x => x.h < 40));
+  ok('every button is thumb-sized', small.length === 0, JSON.stringify(small.slice(0,4)));
+  ok('the page declares itself installable',
+     await page.evaluate(() => !!document.querySelector('link[rel=manifest]') &&
+                               !!document.querySelector('meta[name="apple-mobile-web-app-capable"]')));
+  ok('the status bar gets a colour', await page.evaluate(() =>
+     document.querySelector('meta[name=theme-color]')?.content === '#0b0b0f'));
 
   section('Signed out, nothing is walled off');
   const anon = await ctx.newPage();

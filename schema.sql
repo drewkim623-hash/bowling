@@ -26,8 +26,18 @@ create table if not exists profiles (
   hand         text check (hand in ('L','R')),
   ball_weight  smallint check (ball_weight between 6 and 20),
   home_house   text,
-  joined_at    timestamptz not null default now()
+  joined_at    timestamptz not null default now(),
+  is_admin     boolean not null default false
 );
+-- Added later; this keeps an existing database in step.
+alter table profiles add column if not exists is_admin boolean not null default false;
+
+-- The commissioner. Can fix or remove anybody's games and sessions — every one
+-- of those changes still lands in the edits table for all to see.
+create or replace function is_commissioner() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select is_admin from profiles where id = auth.uid()), false)
+$$;
 
 -- -------------------------------------------------------------- outings
 create table if not exists sessions (
@@ -113,15 +123,35 @@ drop trigger if exists games_edit_log on games;
 create trigger games_edit_log before update or delete on games
   for each row execute function log_game_edit();
 
--- New sign-ups get a profile row automatically.
+-- New sign-ups get a profile row automatically. The very first account to
+-- exist becomes the commissioner, because somebody has to be able to fix
+-- things and there is nobody around yet to appoint them.
 create or replace function handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  insert into profiles (id, display_name)
-  values (new.id, coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email,'@',1)))
+  insert into profiles (id, display_name, is_admin)
+  values (new.id,
+          coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email,'@',1)),
+          not exists (select 1 from profiles where is_admin))
   on conflict (id) do nothing;
   return new;
 end $$;
+
+-- Nobody promotes themselves. is_admin can only be changed by an existing
+-- commissioner, or from the SQL editor, where auth.uid() is null.
+create or replace function guard_admin_flag() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.is_admin is distinct from old.is_admin
+     and auth.uid() is not null and not is_commissioner() then
+    new.is_admin := old.is_admin;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists profiles_guard_admin on profiles;
+create trigger profiles_guard_admin before update on profiles
+  for each row execute function guard_admin_flag();
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
@@ -153,8 +183,8 @@ drop policy if exists sessions_update on sessions;
 drop policy if exists sessions_delete on sessions;
 create policy sessions_read   on sessions for select using (true);
 create policy sessions_insert on sessions for insert to authenticated with check (created_by = auth.uid());
-create policy sessions_update on sessions for update to authenticated using (created_by = auth.uid());
-create policy sessions_delete on sessions for delete to authenticated using (created_by = auth.uid());
+create policy sessions_update on sessions for update to authenticated using (created_by = auth.uid() or is_commissioner());
+create policy sessions_delete on sessions for delete to authenticated using (created_by = auth.uid() or is_commissioner());
 
 drop policy if exists sp_read   on session_players;
 drop policy if exists sp_insert on session_players;
@@ -164,9 +194,9 @@ create policy sp_read   on session_players for select using (true);
 create policy sp_insert on session_players for insert to authenticated
   with check (exists (select 1 from sessions s where s.id = session_id));
 create policy sp_update on session_players for update to authenticated
-  using (exists (select 1 from sessions s where s.id = session_id and s.created_by = auth.uid()));
+  using (exists (select 1 from sessions s where s.id = session_id and (s.created_by = auth.uid() or is_commissioner())));
 create policy sp_delete on session_players for delete to authenticated
-  using (exists (select 1 from sessions s where s.id = session_id and s.created_by = auth.uid()));
+  using (exists (select 1 from sessions s where s.id = session_id and (s.created_by = auth.uid() or is_commissioner())));
 
 -- games: everyone reads. A signed-in person may log a game for themselves OR
 -- for anyone else, because one person usually enters the whole lane. Only the
@@ -178,9 +208,9 @@ drop policy if exists games_delete on games;
 create policy games_read   on games for select using (true);
 create policy games_insert on games for insert to authenticated with check (logged_by = auth.uid());
 create policy games_update on games for update to authenticated
-  using (profile_id = auth.uid() or logged_by = auth.uid());
+  using (profile_id = auth.uid() or logged_by = auth.uid() or is_commissioner());
 create policy games_delete on games for delete to authenticated
-  using (profile_id = auth.uid() or logged_by = auth.uid());
+  using (profile_id = auth.uid() or logged_by = auth.uid() or is_commissioner());
 
 -- rolls: inherit whatever the parent game allows
 drop policy if exists rolls_read   on rolls;
@@ -189,11 +219,11 @@ drop policy if exists rolls_update on rolls;
 drop policy if exists rolls_delete on rolls;
 create policy rolls_read on rolls for select using (true);
 create policy rolls_insert on rolls for insert to authenticated with check (
-  exists (select 1 from games g where g.id = game_id and (g.profile_id = auth.uid() or g.logged_by = auth.uid())));
+  exists (select 1 from games g where g.id = game_id and (g.profile_id = auth.uid() or g.logged_by = auth.uid() or is_commissioner())));
 create policy rolls_update on rolls for update to authenticated using (
-  exists (select 1 from games g where g.id = game_id and (g.profile_id = auth.uid() or g.logged_by = auth.uid())));
+  exists (select 1 from games g where g.id = game_id and (g.profile_id = auth.uid() or g.logged_by = auth.uid() or is_commissioner())));
 create policy rolls_delete on rolls for delete to authenticated using (
-  exists (select 1 from games g where g.id = game_id and (g.profile_id = auth.uid() or g.logged_by = auth.uid())));
+  exists (select 1 from games g where g.id = game_id and (g.profile_id = auth.uid() or g.logged_by = auth.uid() or is_commissioner())));
 
 -- edits: everyone reads — that is the entire point. Nobody writes directly,
 -- nobody updates, nobody deletes. Only the trigger above ever adds a row.
@@ -208,3 +238,11 @@ drop policy if exists avatars_write  on storage.objects;
 create policy avatars_read  on storage.objects for select using (bucket_id = 'avatars');
 create policy avatars_write on storage.objects for insert to authenticated
   with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------------------------------------------------------------------
+--  Appointing a commissioner by hand, if the first-account rule missed:
+--    update profiles set is_admin = true where display_name = 'Drew';
+--  And to step down, or to appoint somebody else:
+--    update profiles set is_admin = false where display_name = 'Drew';
+--  Run either from the SQL editor. The site cannot do it for you on purpose.
+-- ---------------------------------------------------------------------
