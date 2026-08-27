@@ -1,0 +1,2521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Avengers Bowling</title>
+<meta name="description" content="The record book, leaderboard and trophy case for Avengers Bowling.">
+<style>
+:root{
+  --plane:#0b0b0f; --surface:#17171c; --raised:#1f1f26; --hover:#262630;
+  --ink:#ffffff; --ink-2:#c6c5cf; --muted:#8b8a95;
+  --grid:#2a2a33; --ring:rgba(255,255,255,.09);
+  --blue:#3987e5; --red:#e66767; --aqua:#199e70; --gold:#c98500; --violet:#9085e9;
+  --good:#0ca30c; --crit:#d03b3b; --mid:#383840;
+  --plus:#3ad07f; --hold:#c98500;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --r:14px; --rs:10px;
+  --pad:max(16px,env(safe-area-inset-left));
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--plane);color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.45;
+  overflow-x:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;text-align:left}
+input,select{font:inherit}
+a{color:var(--blue)}
+h1,h2,h3,p,dl,dd,dt,figure{margin:0}
+/* every number in the building lines up */
+.n,table,.tile .big,.big,.mono,.strip,input[type=number],.spark,.lb{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono)}
+.wrap{width:100%;max-width:820px;margin:0 auto;padding:0 var(--pad) 130px}
+.muted{color:var(--muted)}.ink2{color:var(--ink-2)}
+.small{font-size:12.5px}.tiny{font-size:11.5px}
+.up{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.row{display:flex;gap:8px;align-items:center}
+.row.wrapf{flex-wrap:wrap}
+.spread{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.good{color:var(--plus)}.bad{color:var(--red)}.gold{color:var(--gold)}
+
+/* ---- hero ---- */
+/* two soft glows, painted as backgrounds so nothing can spill sideways */
+.hero{position:relative;padding:26px 0 16px;margin:0 calc(-1*var(--pad));padding-left:var(--pad);padding-right:var(--pad);
+  background:
+    radial-gradient(360px 260px at 6% -30%, rgba(57,135,229,.34), transparent 70%),
+    radial-gradient(340px 240px at 96% -14%, rgba(144,133,233,.26), transparent 72%)}
+.hero h1{font-size:clamp(31px,10.5vw,48px);line-height:1;letter-spacing:-.025em;font-weight:800;
+  background:linear-gradient(103deg,#fff 4%,var(--blue) 56%,var(--violet) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;padding-bottom:2px}
+.hero .tagline{color:var(--muted);font-size:13px;margin-top:7px}
+
+/* ---- tabs ---- */
+.tabs{position:sticky;top:0;z-index:40;margin:0 calc(-1*var(--pad));padding:8px var(--pad);
+  background:rgba(11,11,15,.88);backdrop-filter:saturate(140%) blur(10px);border-bottom:1px solid var(--ring)}
+.tabs .strip2{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.tabs .strip2::-webkit-scrollbar{display:none}
+.tab{white-space:nowrap;padding:8px 14px;border-radius:999px;background:var(--raised);
+  border:1px solid var(--ring);color:var(--ink-2);font-size:13px;font-weight:650}
+.tab[aria-selected="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
+
+/* ---- cards ---- */
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:14px;margin:12px 0}
+.card.pad0{padding:0;overflow:hidden}
+.tap{transition:transform .12s ease,border-color .12s ease,background .12s ease}
+.tap:hover{transform:translateY(-2px);border-color:rgba(57,135,229,.55);background:var(--hover)}
+.tap:active{transform:translateY(0)}
+.sec{margin-top:24px}
+.sec>h2{font-size:17px;letter-spacing:-.015em;font-weight:750}
+.sec>.sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+
+/* ---- stat tiles ---- */
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}
+@media(min-width:620px){.tiles{grid-template-columns:repeat(4,1fr)}}
+.tiles.two{grid-template-columns:repeat(2,1fr)}
+.tile{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:11px 12px}
+.tile .big{overflow-wrap:anywhere;font-size:25px;font-weight:750;margin-top:3px;letter-spacing:-.02em;line-height:1.1}
+.tile .cap{font-size:11.5px;color:var(--muted);margin-top:3px;min-height:16px}
+
+/* ---- tables ---- */
+.scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:8px 9px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--grid)}
+tr:last-child>td{border-bottom:0}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650}
+th button{font-size:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;font-weight:inherit;width:100%;text-align:right}
+th[aria-sort] button{color:var(--ink)}
+th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--surface);z-index:1}
+th:first-child button{text-align:left}
+tbody tr.tap:hover td{background:var(--hover)}
+tbody tr.tap:hover td:first-child{background:var(--hover)}
+.rank{color:var(--muted);width:1px;padding-right:0}
+
+/* ---- buttons ---- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 15px;
+  border-radius:var(--rs);background:var(--raised);border:1px solid var(--ring);font-weight:650;font-size:14px;
+  text-align:center;transition:background .12s,border-color .12s}
+.btn:hover{background:var(--hover);border-color:rgba(57,135,229,.5)}
+.btn.pri{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn.pri:hover{background:#4a92e8}
+.btn.wide{width:100%}
+.btn.big{padding:16px;font-size:16px}
+.btn.sm{padding:7px 11px;font-size:12.5px;border-radius:8px}
+.btn[disabled]{opacity:.4;pointer-events:none}
+.btn.danger{color:var(--red);border-color:rgba(230,103,103,.4)}
+.seg{display:flex;background:var(--raised);border:1px solid var(--ring);border-radius:999px;padding:3px;gap:3px}
+.seg button{flex:1;padding:8px 10px;border-radius:999px;font-size:13px;font-weight:650;color:var(--ink-2);text-align:center}
+.seg button[aria-pressed="true"]{background:var(--blue);color:#fff}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;
+  background:var(--raised);border:1px solid var(--ring);font-size:11.5px;color:var(--ink-2)}
+.chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;flex:none}
+.dot.quick{background:var(--hold)}
+
+/* ---- forms ---- */
+label.f{display:block;margin:10px 0 0}
+label.f>span{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+input[type=text],input[type=email],input[type=password],input[type=date],input[type=number],select,textarea{
+  width:100%;padding:11px 12px;border-radius:var(--rs);background:var(--raised);
+  border:1px solid var(--ring);color:var(--ink);outline:none}
+input:focus,select:focus{border-color:var(--blue)}
+.err{color:var(--red);font-size:12.5px;margin-top:8px}
+.ok{color:var(--plus);font-size:12.5px;margin-top:8px}
+
+/* ---- people ---- */
+.people{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
+.person{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:10px;min-width:0}
+.person .row>div{min-width:0}
+.person .row>div>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.av{width:34px;height:34px;border-radius:50%;background:var(--raised);border:1px solid var(--ring);
+  display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--ink-2);overflow:hidden;flex:none}
+.av img{width:100%;height:100%;object-fit:cover}
+.av.lg{width:52px;height:52px;font-size:19px}
+
+/* ---- champion bar ---- */
+.champ{background:linear-gradient(100deg,rgba(201,133,0,.30),rgba(201,133,0,.05));
+  border:1px solid rgba(201,133,0,.5);border-radius:var(--r);padding:14px;margin:14px 0}
+.champ .up{color:var(--gold)}
+
+/* ---- glossary ---- */
+.gloss{margin:16px 0 6px;background:var(--surface);border:1px solid var(--ring);border-radius:var(--r)}
+.gloss>summary{padding:12px 14px;cursor:pointer;font-size:13px;font-weight:650;color:var(--ink-2);
+  list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.gloss>summary::-webkit-details-marker{display:none}
+.gloss>summary::after{content:"+";color:var(--muted);font-size:16px;line-height:1}
+.gloss[open]>summary::after{content:"\2013"}
+.gloss dl{padding:0 14px 14px;margin:0}
+.gloss dt{font-size:12.5px;font-weight:700;margin-top:11px}
+.gloss dd{font-size:12.5px;color:var(--ink-2);margin:2px 0 0}
+
+/* ---- charts ---- */
+.barrow{display:grid;grid-template-columns:minmax(64px,88px) 1fr minmax(42px,58px);gap:8px;align-items:center;padding:4px 0}
+.barrow .lb2{font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.barrow .val{font-size:12.5px;text-align:right;color:var(--ink)}
+.track{height:9px;background:var(--mid);border-radius:999px;overflow:hidden}
+.track>i{display:block;height:100%;background:var(--blue);border-radius:999px;transition:width .3s}
+.track>i.g{background:var(--plus)}.track>i.r{background:var(--red)}.track>i.gd{background:var(--gold)}
+.dvg{position:relative;height:9px;background:var(--mid);border-radius:999px}
+.dvg::before{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--grid)}
+.dvg>i{position:absolute;top:0;height:100%;border-radius:999px}
+.spark{display:block}
+.chart{width:100%;height:auto;display:block;touch-action:pan-y}
+.tipbox{position:fixed;z-index:80;pointer-events:none;background:var(--raised);border:1px solid var(--ring);
+  border-radius:8px;padding:6px 9px;font-size:11.5px;color:var(--ink);white-space:nowrap;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);opacity:0;transition:opacity .1s}
+.tipbox.on{opacity:1}
+.stack{display:flex;height:11px;border-radius:999px;overflow:hidden;background:var(--mid)}
+.stack>i{display:block;height:100%}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:7px}
+.legend span{font-size:11.5px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.sw{width:9px;height:9px;border-radius:3px;display:inline-block}
+
+/* ---- score strip (the monitor above the lane) ---- */
+.strip{display:grid;grid-template-columns:repeat(9,1fr) 1.34fr;gap:2px;width:100%}
+.fr{background:var(--raised);border:1px solid var(--ring);border-radius:6px;overflow:hidden;min-width:0}
+.fr .marks{display:flex;justify-content:flex-end;gap:1px;padding:2px 2px 0;min-height:17px}
+.fr .marks b{width:14px;height:14px;display:grid;place-items:center;font-size:11px;font-weight:700;
+  background:var(--mid);border-radius:3px;color:var(--ink)}
+.fr .marks b.x{background:var(--blue);color:#fff}
+.fr .marks b.s{background:var(--aqua);color:#fff}
+.fr .tot{text-align:center;font-size:12px;font-weight:700;padding:1px 0 3px;min-height:19px}
+.fr.cur{border-color:var(--blue)}
+.fr .no{font-size:8.5px;color:var(--muted);padding-left:3px}
+
+/* ---- pin deck ---- */
+.deckwrap{display:grid;place-items:center;padding:6px 0 2px}
+.deck{width:100%;max-width:300px;height:auto;display:block;touch-action:manipulation}
+.pin circle{transition:fill .12s,opacity .12s}
+.pin.down{opacity:.32}
+.pin.locked{pointer-events:none;opacity:.22}
+.pin text{font-size:9px;font-weight:700;pointer-events:none}
+.deckbtns{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+.deckbtns .btn{padding:12px 4px;font-size:13px}
+
+/* ---- sheet (tap anyone, see everything) ---- */
+.sheet{position:fixed;inset:0;z-index:60;background:rgba(6,6,9,.72);backdrop-filter:blur(3px);
+  display:flex;align-items:flex-end;justify-content:center}
+.sheet .inner{background:var(--plane);border:1px solid var(--ring);border-radius:18px 18px 0 0;
+  width:100%;max-width:820px;max-height:92vh;overflow-y:auto;overflow-x:hidden;padding:0 var(--pad) 60px;
+  animation:up .18s ease-out}
+@keyframes up{from{transform:translateY(22px);opacity:.4}to{transform:none;opacity:1}}
+.sheet .grab{position:sticky;top:0;z-index:3;background:var(--plane);padding:12px 0 10px;
+  display:flex;justify-content:space-between;align-items:center;gap:10px;border-bottom:1px solid var(--ring)}
+.sheet .grab h2{font-size:17px;font-weight:750;letter-spacing:-.015em}
+.x{width:32px;height:32px;border-radius:50%;background:var(--raised);border:1px solid var(--ring);
+  display:grid;place-items:center;flex:none;font-size:15px;color:var(--ink-2)}
+
+/* ---- misc ---- */
+.feed{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--grid);align-items:flex-start}
+.feed:last-child{border-bottom:0}
+.feed .when{margin-left:auto;color:var(--muted);font-size:11.5px;white-space:nowrap}
+.empty{text-align:center;color:var(--muted);font-size:13px;padding:26px 10px}
+.bar-note{font-size:11.5px;color:var(--muted);margin-top:6px}
+.sticky-cta{position:fixed;left:0;right:0;bottom:0;z-index:45;padding:10px var(--pad) calc(10px + env(safe-area-inset-bottom));
+  background:linear-gradient(to top,rgba(11,11,15,.97) 62%,transparent);pointer-events:none}
+.sticky-cta .btn{pointer-events:auto;max-width:820px;margin:0 auto;display:flex}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hide{display:none!important}
+.toast{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:90;background:var(--raised);
+  border:1px solid var(--ring);border-radius:999px;padding:9px 16px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.55);
+  opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:92vw}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(-6px)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <h1>Avengers Bowling</h1>
+    <p class="tagline">The record book. Everyone logs their own scores. Nobody is the commissioner.</p>
+  </header>
+  <nav class="tabs" aria-label="Sections"><div class="strip2" id="tabs" role="tablist"></div></nav>
+  <main id="panel" role="tabpanel"></main>
+</div>
+<div id="sheet-root"></div>
+<div id="cta-root"></div>
+<div class="tipbox" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<!-- ==========================================================================
+     ENGINE — pure scoring + stats. No DOM in here on purpose: verify.mjs
+     lifts this exact block out of the file and runs it in Node.
+     ========================================================================== -->
+<script type="module" id="engine">
+/* PIN BITMASK CONVENTION — every stat below depends on this.
+   Pin 1 = bit 0 = value 1
+   Pin 2 = bit 1 = value 2
+   Pin 3 = bit 2 = 4
+   Pin 4 = 8, pin 5 = 16, pin 6 = 32, pin 7 = 64, pin 8 = 128, pin 9 = 256, pin 10 = 512.
+   A full rack standing = 1 + 2 + 4 + ... + 512 = 1023.
+   `standing_before` = what was up when the ball was thrown.
+   `knocked`         = which of those went down. knocked is always a subset of standing_before. */
+const FULL = 1023;
+const bit  = p => 1 << (p - 1);
+const ALL  = [1,2,3,4,5,6,7,8,9,10];
+const pinsOf = m => ALL.filter(p => m & bit(p));
+const maskOf = list => list.reduce((m,p) => m | bit(p), 0);
+const cnt = m => { let c = 0; while (m) { m &= m - 1; c++; } return c; };
+
+/* Physical rack geometry. Row 0 is the headpin, row 3 is the back row.
+   x is in half-pin units so neighbours in a row are 2 apart and the
+   diagonal in front of a pin is exactly 1 away. */
+const ROW = {1:0, 2:1,3:1, 4:2,5:2,6:2, 7:3,8:3,9:3,10:3};
+const XP  = {1:0, 2:-1,3:1, 4:-2,5:0,6:2, 7:-3,8:-1,9:1,10:3};
+const aheadOf = p => ALL.filter(q => ROW[q] === ROW[p] - 1 && Math.abs(XP[q] - XP[p]) === 1);
+
+/* ---------------------------------------------------------------- scoring */
+
+/* Turn stored rolls into the flat list of "pins down on this ball" that
+   scoring actually needs. Rolls must be in frame/roll order. */
+function ordered(rolls){
+  return [...rolls].sort((a,b) => a.frame - b.frame || a.roll - b.roll);
+}
+function counts(rolls){ return ordered(rolls).map(r => cnt(r.knocked)); }
+
+/* The whole game, frame by frame, from a flat list of ball results.
+   Handles unfinished games: a frame whose bonus is not known yet has score null. */
+function scoreCounts(c){
+  const frames = [];
+  let i = 0, run = 0, complete = false, live = true;
+  for (let f = 1; f <= 10; f++){
+    const fr = { frame:f, pins:[], display:[], score:null, kind:'', done:false };
+    if (!live){ frames.push(fr); continue; }
+    if (f < 10){
+      const a = c[i];
+      if (a == null){ live = false; frames.push(fr); continue; }
+      if (a === 10){
+        fr.pins = [10]; fr.display = ['X']; fr.kind = 'strike'; fr.done = true; i += 1;
+        const b = c[i], d = c[i+1];
+        if (b != null && d != null){ run += 10 + b + d; fr.score = run; }
+      } else {
+        const b = c[i+1];
+        if (b == null){
+          fr.pins = [a]; fr.display = [a === 0 ? '-' : String(a)];
+          live = false; frames.push(fr); continue;
+        }
+        fr.pins = [a,b]; fr.done = true; i += 2;
+        if (a + b === 10){
+          fr.kind = 'spare'; fr.display = [a === 0 ? '-' : String(a), '/'];
+          const d = c[i];
+          if (d != null){ run += 10 + d; fr.score = run; }
+        } else {
+          fr.kind = 'open'; fr.display = [a === 0 ? '-' : String(a), b === 0 ? '-' : String(b)];
+          run += a + b; fr.score = run;
+        }
+      }
+    } else {
+      const a = c[i], b = c[i+1], d = c[i+2];
+      if (a == null){ live = false; frames.push(fr); continue; }
+      const needs3 = a === 10 || (b != null && a + b === 10);
+      const show = [];
+      show.push(a === 10 ? 'X' : (a === 0 ? '-' : String(a)));
+      if (b != null){
+        if (a === 10) show.push(b === 10 ? 'X' : (b === 0 ? '-' : String(b)));
+        else show.push(a + b === 10 ? '/' : (b === 0 ? '-' : String(b)));
+      }
+      if (d != null){
+        if (a === 10 && b !== 10 && b + d === 10) show.push('/');
+        else show.push(d === 10 ? 'X' : (d === 0 ? '-' : String(d)));
+      }
+      fr.pins = [a, b, d].filter(v => v != null);
+      fr.display = show;
+      fr.kind = a === 10 ? 'strike' : (b != null && a + b === 10 ? 'spare' : (b != null ? 'open' : ''));
+      const enough = needs3 ? d != null : b != null;
+      if (enough){
+        fr.done = true; complete = true;
+        run += fr.pins.reduce((s,v) => s + v, 0);
+        fr.score = run;
+      }
+    }
+    frames.push(fr);
+  }
+  return { frames, total: run, complete };
+}
+function scoreRolls(rolls){ return scoreCounts(counts(rolls)); }
+
+/* What the pin deck should show next. This is the only place that knows
+   about the 10th frame re-rack. */
+function deckState(rolls){
+  const by = {};
+  ordered(rolls).forEach(r => { (by[r.frame] = by[r.frame] || []).push(r); });
+  for (let f = 1; f <= 10; f++){
+    const rs = by[f] || [];
+    if (f < 10){
+      if (rs.length === 0) return { done:false, frame:f, roll:1, standing:FULL };
+      if (cnt(rs[0].knocked) === 10) continue;
+      if (rs.length === 1) return { done:false, frame:f, roll:2, standing: rs[0].standing_before & ~rs[0].knocked };
+      continue;
+    }
+    if (rs.length === 0) return { done:false, frame:10, roll:1, standing:FULL };
+    const a = cnt(rs[0].knocked);
+    if (rs.length === 1)
+      return { done:false, frame:10, roll:2, standing: a === 10 ? FULL : (rs[0].standing_before & ~rs[0].knocked) };
+    const b = cnt(rs[1].knocked);
+    if (rs.length === 2){
+      if (a !== 10 && a + b !== 10) return { done:true };
+      let st;
+      if (a === 10) st = b === 10 ? FULL : (rs[1].standing_before & ~rs[1].knocked);
+      else st = FULL;                     // the spare cleared the deck, fresh rack
+      return { done:false, frame:10, roll:3, standing: st };
+    }
+    return { done:true };
+  }
+  return { done:true };
+}
+
+/* Replay a stored game and shout if anything is impossible: pins knocked that
+   were not standing, frames out of order, balls after the game ended. */
+function validateRolls(rolls){
+  const seq = ordered(rolls);
+  const sofar = [];
+  for (const r of seq){
+    const st = deckState(sofar);
+    if (st.done) return 'extra ball after the game was over';
+    if (r.frame !== st.frame || r.roll !== st.roll) return `expected frame ${st.frame} ball ${st.roll}, got frame ${r.frame} ball ${r.roll}`;
+    if (r.standing_before !== st.standing) return `frame ${r.frame} ball ${r.roll}: wrong pins standing`;
+    if (r.knocked & ~r.standing_before) return `frame ${r.frame} ball ${r.roll}: knocked down a pin that was already down`;
+    sofar.push(r);
+  }
+  return null;
+}
+
+/* ------------------------------------------------- which totals are real */
+/* Backward search over every legal game shape, so quick-entry validation is
+   a fact and not a guess. State: frame, ball, pins standing, and the two
+   pending bonus claims (b1 applies to this ball, b2 to the next).
+   `tenth` remembers whether the 10th frame opened with a strike. */
+let _memo = null;
+function remSet(f, ball, st, b1, b2, tenth){
+  const key = `${f}.${ball}.${st}.${b1}.${b2}.${tenth}`;
+  if (_memo.has(key)) return _memo.get(key);
+  const out = new Set();
+  _memo.set(key, out);
+  if (f > 10){ out.add(0); return out; }
+  for (let p = 0; p <= st; p++){
+    const add = p * (1 + b1);
+    let next;
+    if (f < 10){
+      if (ball === 1){
+        next = p === 10 ? [f+1, 1, 10, b2 + 1, 1, 0] : [f, 2, 10 - p, b2, 0, 0];
+      } else {
+        next = [f+1, 1, 10, b2 + (p === st ? 1 : 0), 0, 0];
+      }
+    } else if (ball === 1){
+      next = [10, 2, p === 10 ? 10 : 10 - p, b2, 0, p === 10 ? 1 : 0];
+    } else if (ball === 2){
+      const third = tenth === 1 || p === st;
+      if (!third) next = [11, 1, 0, 0, 0, 0];
+      else next = [10, 3, tenth === 1 ? (p === 10 ? 10 : 10 - p) : 10, b2, 0, tenth];
+    } else {
+      next = [11, 1, 0, 0, 0, 0];
+    }
+    for (const v of remSet(...next)) out.add(add + v);
+  }
+  return out;
+}
+let _possible = null;
+function possibleScores(){
+  if (_possible) return _possible;
+  _memo = new Map();
+  _possible = remSet(1, 1, 10, 0, 0, 0);
+  return _possible;
+}
+function isPossibleScore(n){
+  return Number.isInteger(n) && n >= 0 && n <= 300 && possibleScores().has(n);
+}
+/* Build an actual game that lands on n — used by the tests to prove the
+   set above is not lying. Returns a flat list of ball results. */
+function witness(n){
+  if (!isPossibleScore(n)) return null;
+  let state = [1,1,10,0,0,0], target = n;
+  const out = [];
+  let guard = 0;
+  while (state[0] <= 10 && guard++ < 40){
+    const [f, ball, st, b1, b2, tenth] = state;
+    let moved = false;
+    for (let p = 0; p <= st; p++){
+      const add = p * (1 + b1);
+      let next;
+      if (f < 10){
+        if (ball === 1) next = p === 10 ? [f+1,1,10,b2+1,1,0] : [f,2,10-p,b2,0,0];
+        else next = [f+1,1,10,b2 + (p === st ? 1 : 0),0,0];
+      } else if (ball === 1){
+        next = [10,2,p === 10 ? 10 : 10-p,b2,0,p === 10 ? 1 : 0];
+      } else if (ball === 2){
+        const third = tenth === 1 || p === st;
+        next = third ? [10,3,tenth === 1 ? (p === 10 ? 10 : 10-p) : 10,b2,0,tenth] : [11,1,0,0,0,0];
+      } else next = [11,1,0,0,0,0];
+      if (remSet(...next).has(target - add)){
+        out.push(p); target -= add; state = next; moved = true; break;
+      }
+    }
+    if (!moved) return null;
+  }
+  return out;
+}
+
+/* ------------------------------------------------------- splits & leaves */
+/* Straight from the standing bitmask. The headpin must be down, and then any
+   one of these makes it a split:
+   (a) a downed pin sits between two standing pins in the same row  (7-9, 4-6)
+   (b) a downed pin sits immediately in front of two standing pins  (5-6)
+   (c) the standing pins are not all connected in the rack          (2-7, 5-10)
+   For (c), two pins count as connected if they are side by side in a row, or
+   diagonally touching in neighbouring rows, or one is directly behind the
+   other two rows back — that last one is "double wood" (2-8, 3-9), which is
+   coverable with one ball and therefore not a split.
+   If the headpin is still standing it is a washout, not a split. */
+function connected(a, b){
+  if (ROW[a] === ROW[b]) return Math.abs(XP[a] - XP[b]) === 2;
+  if (Math.abs(ROW[a] - ROW[b]) === 1) return Math.abs(XP[a] - XP[b]) === 1;
+  if (Math.abs(ROW[a] - ROW[b]) === 2) return XP[a] === XP[b];
+  return false;
+}
+function isSplit(standing){
+  if (standing & bit(1)) return false;
+  const up = pinsOf(standing);
+  if (up.length < 2) return false;
+  const seen = [up[0]], queue = [up[0]];
+  while (queue.length){
+    const p = queue.pop();
+    for (const q of up) if (!seen.includes(q) && connected(p, q)){ seen.push(q); queue.push(q); }
+  }
+  if (seen.length < up.length) return true;
+  for (const a of up) for (const b of up){
+    if (a >= b || ROW[a] !== ROW[b]) continue;
+    const lo = Math.min(XP[a], XP[b]), hi = Math.max(XP[a], XP[b]);
+    for (const q of ALL)
+      if (ROW[q] === ROW[a] && XP[q] > lo && XP[q] < hi && !(standing & bit(q))) return true;
+  }
+  for (const q of ALL){
+    if (standing & bit(q)) continue;
+    let c = 0;
+    for (const s of up) if (aheadOf(s).includes(q)) c++;
+    if (c >= 2) return true;
+  }
+  return false;
+}
+const NAMED = [
+  [[7,10], 'bedposts'], [[4,6,7,10], 'big four'],
+  [[4,6,7,9,10], 'greek church'], [[4,6,7,8,10], 'greek church'],
+  [[2,4,5,8], 'bucket'], [[3,5,6,9], 'bucket'],
+  [[2,7], 'baby split'], [[3,10], 'baby split'],
+  [[4,6], 'big ears'], [[5,7], 'sour apple'], [[5,10], 'sour apple'],
+];
+function leaveName(mask){
+  const up = pinsOf(mask);
+  if (!up.length) return 'strike';
+  for (const [pins, name] of NAMED) if (maskOf(pins) === mask) return name;
+  if (up.length === 1) return `${up[0]}-pin`;
+  if (mask & bit(1)) return `washout (${up.join('-')})`;
+  return up.join('-');
+}
+
+/* ------------------------------------------------------------ game stats */
+/* Everything roll-level. Quick-entry games have no rolls, so they get
+   counted for average and high game and nothing else. */
+function gameStats(rolls){
+  const s = {
+    frames:0, strikes:0, spares:0, opens:0, marks:0,
+    firstBallPins:0, firstBalls:0,
+    spareChances:0, splits:0, splitConverts:0,
+    pocket:0, carries:0,
+    tenthPins:0, streak:0,
+    leaves:[], firstBallDist: new Array(11).fill(0),
+    clean:false, total:0,
+  };
+  const seq = ordered(rolls);
+  if (!seq.length) return s;
+  const sc = scoreRolls(seq);
+  s.total = sc.total;
+  s.frames = sc.frames.filter(f => f.done).length;
+  s.opens = sc.frames.filter(f => f.kind === 'open').length;
+  s.clean = sc.complete && s.opens === 0;
+
+  let run = 0, pendingSplit = false, pendingMask = 0;
+  for (const r of seq){
+    const k = cnt(r.knocked);
+    const fresh = r.standing_before === FULL;
+    if (fresh){
+      s.firstBalls++; s.firstBallPins += k; s.firstBallDist[k]++;
+      if (k >= 8) s.pocket++;
+      if (k === 10){
+        s.strikes++; s.carries++; run++; s.streak = Math.max(s.streak, run);
+        pendingSplit = false;
+      } else {
+        run = 0;
+        const leave = r.standing_before & ~r.knocked;
+        s.leaves.push(leave);
+        pendingSplit = isSplit(leave); pendingMask = leave;
+        if (pendingSplit) s.splits++;
+      }
+    } else {
+      run = 0;
+      s.spareChances++;
+      if (r.knocked === r.standing_before){
+        s.spares++;
+        if (pendingSplit) s.splitConverts++;
+      }
+      pendingSplit = false;
+    }
+    if (r.frame === 10) s.tenthPins += k;
+  }
+  s.marks = s.strikes + s.spares;
+  return s;
+}
+
+/* Fold a pile of per-game stats into one. */
+function mergeStats(list){
+  const out = {
+    frames:0, strikes:0, spares:0, opens:0, marks:0, firstBallPins:0, firstBalls:0,
+    spareChances:0, splits:0, splitConverts:0, pocket:0, carries:0,
+    tenthPins:0, tenthGames:0, streak:0, leaves:[], firstBallDist:new Array(11).fill(0), clean:0,
+  };
+  for (const s of list){
+    out.frames += s.frames; out.strikes += s.strikes; out.spares += s.spares;
+    out.opens += s.opens; out.marks += s.marks;
+    out.firstBallPins += s.firstBallPins; out.firstBalls += s.firstBalls;
+    out.spareChances += s.spareChances;
+    out.splits += s.splits; out.splitConverts += s.splitConverts;
+    out.pocket += s.pocket; out.carries += s.carries;
+    out.tenthPins += s.tenthPins; out.tenthGames += 1;
+    out.streak = Math.max(out.streak, s.streak);
+    out.leaves.push(...s.leaves);
+    s.firstBallDist.forEach((v,i) => out.firstBallDist[i] += v);
+    if (s.clean) out.clean++;
+  }
+  return out;
+}
+const pct = (a,b) => b ? (a / b) * 100 : null;
+const mean = a => a.length ? a.reduce((s,v) => s + v, 0) / a.length : null;
+function stdev(a){
+  if (a.length < 2) return null;
+  const m = mean(a);
+  return Math.sqrt(a.reduce((s,v) => s + (v - m) ** 2, 0) / a.length);
+}
+function handicap(avg){
+  if (avg == null) return 0;
+  return Math.max(0, Math.min(100, Math.floor(0.9 * (200 - avg))));
+}
+function commonLeaves(leaves, top = 6){
+  const m = new Map();
+  for (const l of leaves) if (l) m.set(l, (m.get(l) || 0) + 1);
+  return [...m.entries()].sort((a,b) => b[1] - a[1]).slice(0, top)
+    .map(([mask,n]) => ({ mask, n, name: leaveName(mask), split: isSplit(mask) }));
+}
+
+window.BOWL = {
+  FULL, bit, cnt, pinsOf, maskOf, ROW, XP, aheadOf,
+  ordered, counts, scoreCounts, scoreRolls, deckState, validateRolls,
+  possibleScores, isPossibleScore, witness,
+  isSplit, leaveName, gameStats, mergeStats,
+  pct, mean, stdev, handicap, commonLeaves,
+};
+</script>
+
+<!-- ==========================================================================
+     APP — everything with a pulse: config, data, screens.
+     ========================================================================== -->
+<script type="module" id="app">
+/* ============================ CONFIGURATION ============================
+   Paste your two Supabase values here. Both of them are meant to be public:
+   the anon key is a *publishable* key, it ships inside every page load of
+   every Supabase site on the internet, and it is not a password. Don't panic
+   when you see it in GitHub. The row level security policies in schema.sql
+   are what actually protect the data.
+   The service_role key is the secret one. That one never goes in this file. */
+const SUPA = {
+  url:     'YOUR_SUPABASE_PROJECT_URL',   // e.g. https://abcdefghijkl.supabase.co
+  anonKey: 'YOUR_SUPABASE_ANON_KEY',      // the long "anon public" key
+};
+/* ====================================================================== */
+
+const B = window.BOWL;
+const Q = new URLSearchParams(location.search);
+const DEMO = Q.has('demo');                       // fake data, for a look around
+const STUB = Q.has('stub') || DEMO;               // never touch Supabase
+const CONFIGURED = !SUPA.url.startsWith('YOUR_');
+const HOUSES = ['Bowl America Fairfax'];          // prefilled; you can type any other
+
+/* ------------------------------------------------------------------ DOM */
+const $ = (s, r = document) => r.querySelector(s);
+function h(sel, props, ...kids){
+  const parts = String(sel).split('.');
+  const n = document.createElement(parts[0] || 'div');
+  if (parts.length > 1) n.className = parts.slice(1).join(' ');
+  for (const [k, v] of Object.entries(props || {})){
+    if (v == null || v === false) continue;
+    if (k === 'cls') n.className = (n.className + ' ' + v).trim();
+    else if (k === 'html') n.innerHTML = v;
+    else if (k === 'style' && typeof v === 'object') Object.assign(n.style, v);
+    else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  put(n, kids);
+  return n;
+}
+function put(n, kids){
+  for (const k of kids.flat(9)){
+    if (k == null || k === false || k === '') continue;
+    n.append(k && k.nodeType ? k : document.createTextNode(String(k)));
+  }
+}
+const NS = 'http://www.w3.org/2000/svg';
+function s(tag, props, ...kids){
+  const n = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(props || {})){
+    if (v == null || v === false) continue;
+    if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const k of kids.flat(9)) if (k != null && k !== false) n.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return n;
+}
+function clear(n){ while (n.firstChild) n.removeChild(n.firstChild); return n; }
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2600);
+}
+
+/* --------------------------------------------------------------- format */
+const one = v => v == null ? '—' : (Math.round(v * 10) / 10).toFixed(1);
+const pc  = v => v == null ? '—' : Math.round(v) + '%';
+const pc1 = v => v == null ? '—' : (Math.round(v * 10) / 10).toFixed(1) + '%';
+const int = v => v == null ? '—' : String(Math.round(v));
+const initials = name => (name || '?').trim().split(/\s+/).slice(0,2).map(w => w[0]).join('').toUpperCase();
+function dateLabel(d){
+  const [y,m,day] = String(d).slice(0,10).split('-').map(Number);
+  return new Date(y, m-1, day).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+}
+function shortDate(d){
+  const [y,m,day] = String(d).slice(0,10).split('-').map(Number);
+  return new Date(y, m-1, day).toLocaleDateString(undefined, { month:'short', day:'numeric' });
+}
+function ago(iso){
+  const secs = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (secs < 90) return 'just now';
+  const mins = secs / 60; if (mins < 60) return Math.round(mins) + 'm ago';
+  const hrs = mins / 60;  if (hrs < 24)  return Math.round(hrs) + 'h ago';
+  const days = hrs / 24;  if (days < 30) return Math.round(days) + 'd ago';
+  return dateLabel(new Date(iso).toISOString());
+}
+const yearOf = d => Number(String(d).slice(0, 4));
+const uid = () => (crypto.randomUUID ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random()*16|0; return (c === 'x' ? r : (r&0x3|0x8)).toString(16); }));
+
+/* ======================================================================
+   DATA LAYER
+   Two implementations behind one small interface: the real Supabase client,
+   and an in-memory stub the test harness and ?demo=1 use. Nothing else in
+   this file knows which one it is talking to.
+   ====================================================================== */
+const state = {
+  ready:false, error:null, mode: STUB ? 'stub' : 'live',
+  user:null, me:null,
+  profiles:[], sessions:[], players:[], games:[], rolls:[], edits:[],
+};
+
+function seededRandom(seed){
+  let a = seed >>> 0;
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+/* Plausible leaves, so demo data doesn't invent nonsense like a standing 5
+   with everything around it gone. */
+const LEAVES = {
+  1:[[10],[7],[4],[6],[5],[9],[3],[2]],
+  2:[[7,10],[4,7],[6,10],[3,10],[2,7],[9,10],[5,7],[4,6],[6,7],[8,10]],
+  3:[[2,4,7],[3,6,10],[4,7,10],[6,9,10],[4,6,10],[5,7,10]],
+  4:[[2,4,5,8],[3,5,6,9],[4,6,7,10],[1,2,4,7],[3,6,9,10],[2,4,7,8]],
+  5:[[2,4,5,7,8],[3,5,6,9,10],[1,2,4,7,8],[4,6,7,9,10]],
+  6:[[1,2,3,4,7,8],[2,4,5,7,8,9],[1,3,5,6,9,10]],
+  7:[[1,2,3,4,5,7,8],[1,2,4,5,7,8,9]],
+  8:[[1,2,3,4,5,6,7,8],[1,2,3,4,5,7,8,9]],
+  9:[[1,2,3,4,5,6,7,8,9],[2,3,4,5,6,7,8,9,10]],
+  10:[[1,2,3,4,5,6,7,8,9,10]],
+};
+function fakeGame(rnd, skill){            // skill 0..1
+  const rolls = [];
+  const pStrike = 0.16 + skill * 0.45;
+  for (let guard = 0; guard < 30; guard++){
+    const st = B.deckState(rolls);
+    if (st.done) break;
+    const standing = st.standing, upCount = B.cnt(standing);
+    let knocked;
+    if (standing === B.FULL){
+      if (rnd() < pStrike) knocked = B.FULL;
+      else {
+        let left = 1 + Math.floor(rnd() * (rnd() < 0.62 ? 2 : 5));
+        left = Math.min(left, 9);
+        const opts = LEAVES[left]; const leave = opts[Math.floor(rnd() * opts.length)];
+        knocked = B.FULL & ~B.maskOf(leave);
+      }
+    } else {
+      const split = B.isSplit(standing);
+      const p = (split ? 0.10 + skill * 0.28 : 0.42 + skill * 0.45) / (1 + (upCount - 1) * 0.22);
+      if (rnd() < p) knocked = standing;
+      else {
+        const up = B.pinsOf(standing);
+        const take = Math.floor(rnd() * up.length);
+        knocked = B.maskOf(up.slice(0, take));
+      }
+    }
+    rolls.push({ frame: st.frame, roll: st.roll, standing_before: standing, knocked });
+  }
+  return rolls;
+}
+/* A whole fake league, deterministic, for ?demo=1 and for the test harness. */
+function demoFixture(){
+  const rnd = seededRandom(20260827);
+  const people = [
+    ['Drew', 0.70, 'R', 15], ['Nat', 0.62, 'R', 12], ['Tony', 0.48, 'L', 16],
+    ['Steve', 0.55, 'R', 15], ['Bruce', 0.33, 'R', 14], ['Clint', 0.44, 'L', 13],
+  ];
+  const profiles = people.map(([name, skill, hand, w], i) => ({
+    id: 'demo-' + i, display_name: name, handle: name.toLowerCase(), avatar_url: null,
+    hand, ball_weight: w, home_house: HOUSES[0], joined_at: '2025-01-05T18:00:00Z', _skill: skill,
+  }));
+  const sessions = [], players = [], games = [], rolls = [], edits = [];
+  const start = new Date(2025, 0, 14);
+  for (let n = 0; n < 16; n++){
+    const d = new Date(start.getTime() + n * 26 * 864e5);
+    const id = 'ses-' + n;
+    const played = d.toISOString().slice(0,10);
+    const roster = profiles.filter(() => rnd() < 0.78);
+    if (roster.length < 4) roster.push(...profiles.filter(p => !roster.includes(p)).slice(0, 4 - roster.length));
+    sessions.push({ id, played_on: played, house: HOUSES[0],
+      title: n % 5 === 0 ? "somebody's birthday" : null, created_by: roster[0].id,
+      created_at: played + 'T22:10:00Z' });
+    const shuffled = [...roster].sort(() => rnd() - 0.5);
+    shuffled.forEach((p, i) => players.push({ session_id:id, profile_id:p.id, team: i % 2 ? 'B' : 'A' }));
+    const count = 3 + (rnd() < 0.3 ? 1 : 0);
+    for (const p of roster){
+      for (let g = 1; g <= count; g++){
+        const gid = `g-${n}-${p.id}-${g}`;
+        const quick = rnd() < 0.12;
+        const rs = fakeGame(rnd, p._skill + (rnd() - 0.5) * 0.12);
+        const total = B.scoreRolls(rs).total;
+        games.push({ id: gid, session_id: id, profile_id: p.id, game_no: g, total_score: total,
+          entry_mode: quick ? 'quick' : 'pins', logged_by: roster[0].id,
+          created_at: played + 'T22:1' + g + ':00Z', updated_at: played + 'T22:1' + g + ':00Z' });
+        if (!quick) rs.forEach(r => rolls.push({ game_id: gid, ...r }));
+      }
+    }
+  }
+  profiles.forEach(p => delete p._skill);
+  return { profiles, sessions, players, games, rolls, edits };
+}
+
+/* ---- the stub: in-memory, used by tests (?stub=1) and demo (?demo=1) ---- */
+function stubDB(){
+  const seed = window.__FIXTURE || (DEMO ? demoFixture() : { profiles:[], sessions:[], players:[], games:[], rolls:[], edits:[] });
+  let user = window.__STUB_USER || null;
+  const D = JSON.parse(JSON.stringify(seed));
+  return {
+    kind:'stub',
+    async init(){ return user; },
+    onChange(){},
+    async loadAll(){ return JSON.parse(JSON.stringify(D)); },
+    async signUp({ email, name }){ user = { id:'me', email }; D.profiles.push({ id:'me', display_name:name || 'You', handle:null, joined_at:new Date().toISOString() }); return {}; },
+    async signIn({ email }){ user = { id:'me', email }; return {}; },
+    async magic(){ return {}; },
+    async signOut(){ user = null; },
+    async saveProfile(patch){ const p = D.profiles.find(x => x.id === user.id); Object.assign(p, patch); },
+    async createSession(row, roster){ D.sessions.push(row); roster.forEach(r => D.players.push({ session_id: row.id, ...r })); },
+    async saveGame(game, rs, prev){
+      const i = D.games.findIndex(g => g.id === game.id);
+      if (i >= 0){
+        D.edits.push({ id: D.edits.length+1, game_id: game.id, editor_id: user?.id, at: new Date().toISOString(), before: prev, after: game });
+        D.games[i] = game;
+      } else D.games.push(game);
+      D.rolls = D.rolls.filter(r => r.game_id !== game.id);
+      rs.forEach(r => D.rolls.push({ game_id: game.id, ...r }));
+    },
+    async deleteGame(id){
+      const g = D.games.find(x => x.id === id);
+      D.edits.push({ id: D.edits.length+1, game_id:id, editor_id:user?.id, at:new Date().toISOString(), before:g, after:null });
+      D.games = D.games.filter(x => x.id !== id); D.rolls = D.rolls.filter(r => r.game_id !== id);
+    },
+    async changePassword(){ return {}; },
+    get user(){ return user; },
+  };
+}
+
+/* ---- the real thing ---- */
+async function liveDB(){
+  const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.45.4');
+  const sb = createClient(SUPA.url, SUPA.anonKey);
+  const table = async (name, cols = '*') => {
+    const { data, error } = await sb.from(name).select(cols);
+    if (error) throw error;
+    return data || [];
+  };
+  return {
+    kind:'live', sb,
+    async init(){ const { data } = await sb.auth.getSession(); return data?.session?.user || null; },
+    onChange(fn){ sb.auth.onAuthStateChange((_e, sess) => fn(sess?.user || null)); },
+    async loadAll(){
+      const [profiles, sessions, players, games, rolls, edits] = await Promise.all([
+        table('profiles'), table('sessions'), table('session_players'),
+        table('games'), table('rolls'), table('edits'),
+      ]);
+      return { profiles, sessions, players, games, rolls, edits };
+    },
+    async signUp({ email, password, name }){
+      const { error } = await sb.auth.signUp({ email, password, options:{ data:{ display_name:name } } });
+      if (error) throw error;
+      return {};
+    },
+    async signIn({ email, password }){
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error; return {};
+    },
+    async magic({ email }){
+      const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.href.split('?')[0] } });
+      if (error) throw error; return {};
+    },
+    async signOut(){ await sb.auth.signOut(); },
+    async saveProfile(patch){
+      const { error } = await sb.from('profiles').upsert({ id: state.user.id, ...patch });
+      if (error) throw error;
+    },
+    async createSession(row, roster){
+      const { error } = await sb.from('sessions').insert(row);
+      if (error) throw error;
+      const { error: e2 } = await sb.from('session_players').insert(roster.map(r => ({ session_id: row.id, ...r })));
+      if (e2) throw e2;
+    },
+    async saveGame(game, rs){
+      const { error } = await sb.from('games').upsert(game);
+      if (error) throw error;
+      await sb.from('rolls').delete().eq('game_id', game.id);
+      if (rs.length){
+        const { error: e2 } = await sb.from('rolls').insert(rs.map(r => ({ game_id: game.id, ...r })));
+        if (e2) throw e2;
+      }
+    },
+    async deleteGame(id){
+      const { error } = await sb.from('games').delete().eq('id', id);
+      if (error) throw error;
+    },
+    async changePassword(password){
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) throw error;
+    },
+  };
+}
+
+let db = null;
+async function load(){
+  const d = await db.loadAll();
+  Object.assign(state, d);
+  state.me = state.profiles.find(p => p.id === (state.user?.id)) || null;
+  derive();
+}
+
+/* ======================================================================
+   DERIVED DATA — every number on the site comes from here.
+   ====================================================================== */
+const D = {};
+function derive(){
+  D.profile = new Map(state.profiles.map(p => [p.id, p]));
+  D.rollsByGame = new Map();
+  for (const r of state.rolls){
+    if (!D.rollsByGame.has(r.game_id)) D.rollsByGame.set(r.game_id, []);
+    D.rollsByGame.get(r.game_id).push(r);
+  }
+  D.session = new Map(state.sessions.map(s => [s.id, s]));
+  D.editsByGame = new Map();
+  for (const e of state.edits){
+    if (!D.editsByGame.has(e.game_id)) D.editsByGame.set(e.game_id, []);
+    D.editsByGame.get(e.game_id).push(e);
+  }
+  D.games = state.games.map(g => {
+    const ses = D.session.get(g.session_id);
+    return { ...g, session: ses, played_on: ses ? ses.played_on : g.created_at.slice(0,10),
+             rolls: D.rollsByGame.get(g.id) || [], edits: D.editsByGame.get(g.id) || [] };
+  }).sort((a, b) => a.played_on.localeCompare(b.played_on) || a.game_no - b.game_no);
+
+  D.gamesByProfile = new Map();
+  D.gamesBySession = new Map();
+  for (const g of D.games){
+    if (!D.gamesByProfile.has(g.profile_id)) D.gamesByProfile.set(g.profile_id, []);
+    D.gamesByProfile.get(g.profile_id).push(g);
+    if (!D.gamesBySession.has(g.session_id)) D.gamesBySession.set(g.session_id, []);
+    D.gamesBySession.get(g.session_id).push(g);
+  }
+  D.teamOf = new Map(state.players.map(p => [p.session_id + '|' + p.profile_id, p.team]));
+  D.rosterOf = new Map();
+  for (const p of state.players){
+    if (!D.rosterOf.has(p.session_id)) D.rosterOf.set(p.session_id, []);
+    D.rosterOf.get(p.session_id).push(p);
+  }
+
+  D.stats = new Map(state.profiles.map(p => [p.id, careerOf(p.id)]));
+  D.sessions = state.sessions.map(sessionSummary)
+    .sort((a,b) => b.played_on.localeCompare(a.played_on) || b.created_at.localeCompare(a.created_at));
+  D.ranked = [...D.stats.values()].filter(s => s.games >= MIN_GAMES).sort((a,b) => b.avg - a.avg);
+  D.unranked = [...D.stats.values()].filter(s => s.games > 0 && s.games < MIN_GAMES).sort((a,b) => b.games - a.games);
+  D.nogames = [...D.stats.values()].filter(s => s.games === 0);
+  D.leader = D.ranked[0] || null;
+  D.pairs = pairings();
+}
+const MIN_GAMES = 6;
+
+function careerOf(pid){
+  const games = D.gamesByProfile.get(pid) || [];
+  const scores = games.map(g => g.total_score);
+  const pinGames = games.filter(g => g.entry_mode === 'pins' && g.rolls.length);
+  const per = pinGames.map(g => B.gameStats(g.rolls));
+  const roll = B.mergeStats(per);
+  const bySession = new Map();
+  for (const g of games){
+    if (!bySession.has(g.session_id)) bySession.set(g.session_id, []);
+    bySession.get(g.session_id).push(g);
+  }
+  const seriesList = [...bySession.entries()].map(([sid, gs]) => ({
+    sid, played_on: gs[0].played_on, total: gs.reduce((s,g) => s + g.total_score, 0), n: gs.length,
+  }));
+  const best3 = bestWindow(games, 3), best4 = bestWindow(games, 4);
+  const last10 = scores.slice(-10);
+  const p = D.profile.get(pid) || { id: pid, display_name: 'Unknown' };
+  return {
+    id: pid, profile: p, name: p.display_name, games: games.length, gameList: games,
+    scores, avg: B.mean(scores), high: scores.length ? Math.max(...scores) : null,
+    low: scores.length ? Math.min(...scores) : null,
+    sd: B.stdev(scores), c200: scores.filter(v => v >= 200).length,
+    seriesList, highSeries: seriesList.length ? Math.max(...seriesList.map(s => s.total)) : null,
+    best3, best4,
+    sessions: bySession.size, last10, last10avg: B.mean(last10),
+    pinGames: pinGames.length, quickGames: games.length - pinGames.length,
+    perGame: per, roll,
+    clean: roll.clean,
+    strikePct: B.pct(roll.strikes, roll.firstBalls),
+    sparePct: B.pct(roll.spares, roll.spareChances),
+    openPct: B.pct(roll.opens, roll.frames),
+    markPct: B.pct(roll.marks, roll.frames),
+    firstBall: roll.firstBalls ? roll.firstBallPins / roll.firstBalls : null,
+    splitRate: B.pct(roll.splits, roll.firstBalls),
+    splitPct: B.pct(roll.splitConverts, roll.splits),
+    carryPct: B.pct(roll.carries, roll.pocket),
+    tenthAvg: roll.tenthGames ? roll.tenthPins / roll.tenthGames : null,
+    streak: roll.streak,
+    leaves: B.commonLeaves(roll.leaves),
+    handicap: B.handicap(B.mean(scores)),
+  };
+}
+function bestWindow(games, n){
+  let best = null;
+  const bySession = new Map();
+  for (const g of games){
+    if (!bySession.has(g.session_id)) bySession.set(g.session_id, []);
+    bySession.get(g.session_id).push(g);
+  }
+  for (const gs of bySession.values()){
+    for (let i = 0; i + n <= gs.length; i++){
+      const t = gs.slice(i, i+n).reduce((s,g) => s + g.total_score, 0);
+      if (best == null || t > best) best = t;
+    }
+  }
+  return best;
+}
+function sessionSummary(ses){
+  const games = (D.gamesBySession.get(ses.id) || []);
+  const roster = (D.rosterOf.get(ses.id) || []);
+  const ids = [...new Set([...roster.map(r => r.profile_id), ...games.map(g => g.profile_id)])];
+  const lines = ids.map(id => {
+    const gs = games.filter(g => g.profile_id === id).sort((a,b) => a.game_no - b.game_no);
+    return { id, name: (D.profile.get(id) || {}).display_name || 'Unknown',
+             team: D.teamOf.get(ses.id + '|' + id) || null, games: gs,
+             series: gs.reduce((s,g) => s + g.total_score, 0), n: gs.length };
+  }).sort((a,b) => b.series - a.series || a.n - b.n);   // ties go to fewer games
+  const teams = new Map();
+  for (const l of lines){
+    if (!l.team) continue;
+    if (!teams.has(l.team)) teams.set(l.team, { team:l.team, total:0, members:[] });
+    const t = teams.get(l.team); t.total += l.series; t.members.push(l);
+  }
+  const teamList = [...teams.values()].sort((a,b) => b.total - a.total);
+  const contested = teamList.length > 1 && teamList.every(t => t.members.some(m => m.n > 0));
+  const mvp = lines.find(l => l.n > 0) || null;
+  return { ...ses, games, lines, teams: teamList, contested,
+           winner: contested ? teamList[0] : null, mvp,
+           pins: games.reduce((s,g) => s + g.total_score, 0),
+           bestGame: games.length ? Math.max(...games.map(g => g.total_score)) : null };
+}
+/* Who you bowl well with: same team, at least 3 shared sessions. */
+function pairings(){
+  const map = new Map();
+  for (const ses of D.sessions){
+    for (const a of ses.lines) for (const b of ses.lines){
+      if (a.id >= b.id || !a.team || a.team !== b.team || !a.n || !b.n) continue;
+      const key = a.id + '|' + b.id;
+      if (!map.has(key)) map.set(key, { a:a.id, b:b.id, sessions:0, pins:0, games:0, wins:0 });
+      const p = map.get(key);
+      p.sessions++;
+      p.pins += a.series + b.series; p.games += a.n + b.n;
+      if (ses.winner && ses.winner.team === a.team) p.wins++;
+    }
+  }
+  return [...map.values()].map(p => {
+    const sa = D.stats.get(p.a), sb = D.stats.get(p.b);
+    const together = p.games ? p.pins / p.games : null;
+    const baseline = (sa && sb && sa.avg != null && sb.avg != null) ? (sa.avg + sb.avg) / 2 : null;
+    return { ...p, nameA: sa?.name, nameB: sb?.name, together, baseline,
+             delta: (together != null && baseline != null) ? together - baseline : null,
+             winPct: p.sessions ? (p.wins / p.sessions) * 100 : null };
+  }).filter(p => p.together != null).sort((a,b) => (b.delta ?? -99) - (a.delta ?? -99));
+}
+/* Career team record for one person across all the rotating line-ups. */
+function teamRecord(pid){
+  let played = 0, won = 0, mvp = 0;
+  const withCount = new Map(), withWins = new Map();
+  for (const ses of D.sessions){
+    const me = ses.lines.find(l => l.id === pid && l.n > 0);
+    if (!me) continue;
+    if (ses.mvp && ses.mvp.id === pid) mvp++;
+    if (!ses.contested || !me.team) continue;
+    played++;
+    const win = ses.winner && ses.winner.team === me.team;
+    if (win) won++;
+    for (const m of ses.lines){
+      if (m.id === pid || m.team !== me.team || !m.n) continue;
+      withCount.set(m.id, (withCount.get(m.id) || 0) + 1);
+      if (win) withWins.set(m.id, (withWins.get(m.id) || 0) + 1);
+    }
+  }
+  const mates = [...withCount.entries()].map(([id, n]) => ({
+    id, name: D.stats.get(id)?.name || '?', n, wins: withWins.get(id) || 0 })).sort((a,b) => b.n - a.n);
+  return { played, won, mvp, winPct: played ? (won/played)*100 : null,
+           mates, most: mates[0] || null, never: mates.filter(m => m.wins === 0 && m.n >= 2)[0] || null };
+}
+
+/* ======================================================================
+   UI PIECES
+   ====================================================================== */
+function tile(label, big, cap, cls){
+  return h('div.tile' + (cls ? '.' + cls : ''), {},
+    h('div.up', {}, label), h('div.big', {}, big), h('div.cap', {}, cap || ''));
+}
+function tiles(list, cls){ return h('div.tiles' + (cls ? '.' + cls : ''), {}, list); }
+function card(...kids){ return h('div.card', {}, kids); }
+function sectionHead(title, sub){
+  return h('div.sec', {}, h('h2', {}, title), sub ? h('p.sub', {}, sub) : null);
+}
+function avatar(p, big){
+  const a = h('div.av' + (big ? '.lg' : ''), {});
+  if (p && p.avatar_url) a.append(h('img', { src: p.avatar_url, alt: '' }));
+  else a.append(initials(p ? p.display_name : '?'));
+  return a;
+}
+/* Plain English, every section, no exceptions. */
+function glossary(entries){
+  return h('details.gloss', {},
+    h('summary', {}, 'What do these numbers mean?'),
+    h('dl', {}, entries.map(([t, d]) => [h('dt', {}, t), h('dd', {}, d)])));
+}
+const GLOSS = {
+  avg:      ['Average', 'Add up every pin you have ever knocked down and divide by the number of games. Higher is better. Shown to one decimal place.'],
+  games:    ['Games', 'How many complete games you have logged.'],
+  high:     ['High game', 'Your best single game.'],
+  series:   ['High series', 'Your best night: every game you bowled in one session added together.'],
+  c200:     ['200+', 'How many of your games were 200 or better. 200 is the number most people aim at.'],
+  clean:    ['Clean', 'Games where you never left a frame unfinished — a strike or a spare in all ten frames.'],
+  strike:   ['Strike %', 'Out of every ball you threw at a full rack of ten pins, how often all ten went down.'],
+  spare:    ['Spare %', 'When you left pins standing, how often you knocked down the rest with your second ball.'],
+  trend:    ['Trend', 'The little line is your last ten games. The number next to it is how much better or worse those ten are than your all-time average. Green is up.'],
+  hcap:     ['Handicap', 'A head start for people with a lower average, so the rest of us have a chance: 90% of the gap between your average and 200, capped at 100. Add it to your score for a fair fight.'],
+  quick:    ['The little amber dot', 'That game was entered as just a final score, so there is no ball-by-ball detail behind it. It still counts for average, high game and records, but it is skipped by anything that needs to know what happened on each roll.'],
+  firstball:['First-ball average', 'How many pins you knock down with your first ball, on average. The single best measure of who actually throws it well.'],
+  split:    ['Split', 'The headpin is down and the pins left standing have a gap in them, so one ball cannot realistically hit them all. The 7-10 is the famous one.'],
+  splitpct: ['Split conversion', 'How often you knocked down every pin of a split anyway. Nobody has a high number here.'],
+  open:     ['Open frame', 'A frame where you left at least one pin standing after both balls.'],
+  mark:     ['Mark %', 'How many of your frames ended in a strike or a spare rather than an open.'],
+  tenth:    ['10th-frame average', 'Average pins you knock down in the last frame, bonus balls included. This is where games get thrown away.'],
+  carry:    ['Carry %', 'When you hit the pocket well — eight or more pins on the first ball — how often it actually turned into a strike. Low carry means you are throwing it fine and getting unlucky.'],
+  streak:   ['Longest streak', 'The most strikes you have thrown back to back. Three is a turkey.'],
+  leave:    ['Most common leave', 'The pins you most often have left standing after your first ball.'],
+  sd:       ['Consistency', 'Standard deviation — the typical distance between one of your games and your own average. A small number means every game looks the same.'],
+  minimum:  ['Why am I not on the board?', `The ranked table needs ${MIN_GAMES} games before it will list you. Everyone below that is in the group underneath, with their count so far.`],
+};
+
+/* ---------------------------------------------------------- tap tooltips */
+let tipTimer = null;
+function showTip(x, y, text){
+  const t = $('#tip');
+  t.textContent = text; t.classList.add('on');
+  const w = t.offsetWidth || 90;
+  t.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, x - w/2)) + 'px';
+  t.style.top  = Math.max(8, y - 42) + 'px';
+  clearTimeout(tipTimer); tipTimer = setTimeout(hideTip, 2400);
+}
+function hideTip(){ $('#tip').classList.remove('on'); }
+function tip(node, text){
+  const fn = e => { const t = typeof text === 'function' ? text(e) : text; if (t) showTip(e.clientX, e.clientY, t); e.stopPropagation(); };
+  node.addEventListener('pointerdown', fn);
+  node.addEventListener('pointermove', e => { if (e.pointerType === 'mouse') fn(e); });
+  node.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hideTip(); });
+  return node;
+}
+document.addEventListener('pointerdown', hideTip);
+
+/* ------------------------------------------------------------- charts */
+function barRows(items, { color = '', note = '' } = {}){
+  const max = Math.max(...items.map(i => i.value || 0), 1);
+  const box = h('div', {}, items.map(i => {
+    const row = h('div.barrow', {},
+      h('div.lb2', {}, i.label),
+      h('div.track', {}, h('i' + (i.color || color ? '.' + (i.color || color) : ''),
+        { style:{ width: Math.max(1.5, (i.value / max) * 100) + '%' } })),
+      h('div.val.n', {}, i.text ?? int(i.value)));
+    return tip(row, i.tipText || `${i.label}: ${i.text ?? int(i.value)}`);
+  }));
+  if (note) box.append(h('div.bar-note', {}, note));
+  return box;
+}
+function divergingBars(items){
+  const max = Math.max(...items.map(i => Math.abs(i.value || 0)), 1);
+  return h('div', {}, items.map(i => {
+    const w = (Math.abs(i.value) / max) * 50;
+    const bar = h('i', { style:{
+      width: Math.max(1, w) + '%',
+      background: i.value >= 0 ? 'var(--plus)' : 'var(--red)',
+      left: i.value >= 0 ? '50%' : (50 - w) + '%' } });
+    const row = h('div.barrow', {},
+      h('div.lb2', {}, i.label),
+      h('div.dvg', {}, bar),
+      h('div.val.n', { cls: i.value >= 0 ? 'good' : 'bad' }, (i.value >= 0 ? '+' : '') + one(i.value)));
+    return tip(row, i.tipText || `${i.label}: ${(i.value >= 0 ? '+' : '') + one(i.value)}`);
+  }));
+}
+function sparkline(values, { w = 66, hgt = 20, stroke = 'var(--blue)' } = {}){
+  if (!values.length) return h('span.muted.tiny', {}, '—');
+  const lo = Math.min(...values), hi = Math.max(...values), span = Math.max(1, hi - lo);
+  const pts = values.map((v, i) => [
+    values.length === 1 ? w/2 : (i / (values.length - 1)) * (w - 2) + 1,
+    hgt - 2 - ((v - lo) / span) * (hgt - 4),
+  ]);
+  const node = s('svg', { class:'spark', width:w, height:hgt, viewBox:`0 0 ${w} ${hgt}` },
+    s('polyline', { fill:'none', stroke, 'stroke-width':1.6, 'stroke-linejoin':'round', 'stroke-linecap':'round',
+                    points: pts.map(p => p.join(',')).join(' ') }),
+    s('circle', { cx: pts[pts.length-1][0], cy: pts[pts.length-1][1], r:2, fill: stroke }));
+  return tip(node, `last ${values.length}: ${values.join(', ')}`);
+}
+function lineChart(points, { label = '', height = 132 } = {}){
+  /* points: [{x:'label', y:number}] — used for rolling average over time */
+  const W = 320, Hh = height, padL = 26, padB = 16, padT = 8, padR = 6;
+  if (points.length < 2) return h('p.empty', {}, 'Not enough games yet to draw a line.');
+  const ys = points.map(p => p.y);
+  const lo = Math.floor(Math.min(...ys) / 10) * 10 - 2, hi = Math.ceil(Math.max(...ys) / 10) * 10 + 2;
+  const span = Math.max(1, hi - lo);
+  const px = i => padL + (i / (points.length - 1)) * (W - padL - padR);
+  const py = v => padT + (1 - (v - lo) / span) * (Hh - padT - padB);
+  const path = points.map((p, i) => `${i ? 'L' : 'M'}${px(i).toFixed(1)},${py(p.y).toFixed(1)}`).join('');
+  const area = `${path}L${px(points.length-1).toFixed(1)},${Hh-padB}L${padL},${Hh-padB}Z`;
+  const g = [
+    s('path', { d:area, fill:'rgba(57,135,229,.16)' }),
+    s('path', { d:path, fill:'none', stroke:'var(--blue)', 'stroke-width':2, 'stroke-linejoin':'round' }),
+  ];
+  for (const v of [lo, (lo+hi)/2, hi]){
+    g.push(s('line', { x1:padL, x2:W-padR, y1:py(v), y2:py(v), stroke:'var(--grid)', 'stroke-width':1 }));
+    g.push(s('text', { x:2, y:py(v)+3, fill:'var(--muted)', 'font-size':8 }, Math.round(v)));
+  }
+  points.forEach((p, i) => {
+    const c = s('circle', { cx:px(i), cy:py(p.y), r: points.length > 30 ? 1.6 : 2.4, fill:'var(--blue)' });
+    tip(c, `${p.x}: ${one(p.y)}${label ? ' ' + label : ''}`);
+    g.push(c);
+  });
+  g.push(s('text', { x:padL, y:Hh-3, fill:'var(--muted)', 'font-size':8 }, points[0].x));
+  g.push(s('text', { x:W-padR, y:Hh-3, fill:'var(--muted)', 'font-size':8, 'text-anchor':'end' }, points[points.length-1].x));
+  const svg = s('svg', { class:'chart', viewBox:`0 0 ${W} ${Hh}`, preserveAspectRatio:'none' }, g);
+  return svg;
+}
+function stackBar(parts){
+  const total = parts.reduce((s,p) => s + p.value, 0) || 1;
+  const bar = h('div.stack', {}, parts.map(p => tip(
+    h('i', { style:{ width:(p.value/total*100)+'%', background:p.color } }),
+    `${p.label}: ${p.value} (${pc(p.value/total*100)})`)));
+  return h('div', {}, bar,
+    h('div.legend', {}, parts.map(p => h('span', {}, h('i.sw', { style:{ background:p.color } }), `${p.label} ${pc(p.value/total*100)}`))));
+}
+
+/* ----------------------------------------------------- sortable tables */
+function sortTable({ cols, rows, initial, dir = -1, onRow, empty = 'Nothing here yet.' }){
+  const host = h('div.scrollx', {});
+  let key = initial || cols[0].key, d = dir;
+  function draw(){
+    clear(host);
+    if (!rows.length){ host.append(h('p.empty', {}, empty)); return; }
+    const sorted = [...rows].sort((a, b) => {
+      const col = cols.find(c => c.key === key) || cols[0];
+      const va = col.sort ? col.sort(a) : col.value(a), vb = col.sort ? col.sort(b) : col.value(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * d;
+    });
+    const thead = h('thead', {}, h('tr', {}, cols.map(c => {
+      const th = h('th', c.key === key ? { 'aria-sort': d < 0 ? 'descending' : 'ascending' } : {});
+      th.append(h('button', { onclick(){ if (key === c.key) d = -d; else { key = c.key; d = c.text ? 1 : -1; } draw(); } },
+        c.label + (c.key === key ? (d < 0 ? ' ↓' : ' ↑') : '')));
+      return th;
+    })));
+    const tbody = h('tbody', {}, sorted.map((r, i) => {
+      const tr = h('tr', onRow ? { class:'tap', onclick(){ onRow(r); } } : {});
+      cols.forEach(c => tr.append(h('td', {}, c.cell ? c.cell(r, i) : fmtCell(c, r))));
+      return tr;
+    }));
+    host.append(h('table', {}, thead, tbody));
+  }
+  function fmtCell(c, r){
+    const v = c.value(r);
+    return c.fmt ? c.fmt(v, r) : (v == null ? '—' : String(v));
+  }
+  draw();
+  return host;
+}
+
+/* ------------------------------------------------------- the sheet */
+function openSheet(title, build, sub){
+  const root = $('#sheet-root');
+  clear(root);
+  const body = h('div', {});
+  const inner = h('div.inner', {},
+    h('div.grab', {},
+      h('div', {}, h('h2', {}, title), sub ? h('p.sub.small.muted', {}, sub) : null),
+      h('button.x', { 'aria-label':'Close', onclick: closeSheet }, '✕')),
+    body);
+  const sheet = h('div.sheet', { onclick(e){ if (e.target === sheet) closeSheet(); } }, inner);
+  root.append(sheet);
+  document.body.style.overflow = 'hidden';
+  build(body);
+  return body;
+}
+function closeSheet(){ clear($('#sheet-root')); document.body.style.overflow = ''; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+/* ------------------------------------------------- the frame-by-frame strip */
+function scoreStrip(frames, current){
+  return h('div.strip', {}, frames.map(f => {
+    const box = h('div.fr' + (current === f.frame ? '.cur' : ''), {},
+      h('div.no', {}, f.frame),
+      h('div.marks', {}, f.display.map(m =>
+        h('b' + (m === 'X' ? '.x' : m === '/' ? '.s' : ''), {}, m))),
+      h('div.tot.n', {}, f.score == null ? '' : f.score));
+    return box;
+  }));
+}
+/* Person buttons — tap anyone, see everything. */
+function personButton(st){
+  return h('button.person.tap', { onclick(){ showBowler(st.id); } },
+    h('div.row', {}, avatar(st.profile), h('div', {},
+      h('div', { style:{ fontWeight:650, fontSize:'13px' } }, st.name),
+      h('div.tiny.muted', {}, st.games ? `${one(st.avg)} avg` : 'no games yet'))));
+}
+function quickDot(g){ return g.entry_mode === 'quick' ? h('span.dot.quick', { title:'entered as a final score only' }) : null; }
+
+/* ======================================================================
+   SCORE ENTRY — a session first, then game 1 for everyone, then game 2.
+   ====================================================================== */
+const LOG = {
+  step:'pick', session:null, roster:[], entry:null,
+  mode: localStorage.getItem('bowl.mode') === 'quick' ? 'quick' : 'pins',
+};
+function setMode(m){ LOG.mode = m; localStorage.setItem('bowl.mode', m); }
+
+/* ---- the pin deck ---- */
+function pinDeck({ standing, selected, onToggle }){
+  const W = 200, Hh = 150, R = 13;
+  const cx = p => 100 + B.XP[p] * 17;
+  const cy = p => 125 - B.ROW[p] * 30;
+  const nodes = [1,2,3,4,5,6,7,8,9,10].map(p => {
+    const up = !!(standing & B.bit(p));
+    const on = !!(selected & B.bit(p));
+    const cls = !up ? 'pin locked' : (on ? 'pin down' : 'pin');
+    const g = s('g', { class:cls, role:'button', tabindex: up ? 0 : -1,
+      'aria-label': `pin ${p}${!up ? ' already down' : on ? ' knocked down' : ' standing'}`,
+      onclick(){ if (up) onToggle(p); },
+      onkeydown(e){ if (up && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); onToggle(p); } } },
+      s('circle', { cx:cx(p), cy:cy(p), r:R,
+        fill: !up ? 'var(--raised)' : (on ? 'var(--mid)' : '#eceaf3'),
+        stroke: on && up ? 'var(--blue)' : 'var(--ring)', 'stroke-width': on && up ? 2 : 1 }),
+      s('text', { x:cx(p), y:cy(p)+3.4, 'text-anchor':'middle',
+        fill: up && !on ? '#15151a' : 'var(--muted)' }, p));
+    return g;
+  });
+  return s('svg', { class:'deck', viewBox:`0 0 ${W} ${Hh}`, 'aria-label':'pin deck' }, nodes);
+}
+
+/* ---- one game's entry screen ---- */
+function entryScreen(){
+  const e = LOG.entry;
+  const wrapEl = h('div', {});
+  function draw(){
+    clear(wrapEl);
+    const who = D.profile.get(e.profile_id);
+    const sc = B.scoreRolls(e.rolls);
+    const st = B.deckState(e.rolls);
+    const done = st.done;
+
+    wrapEl.append(h('div.spread', {},
+      h('div.row', {}, avatar(who), h('div', {},
+        h('div', { style:{ fontWeight:700 } }, who ? who.display_name : '?'),
+        h('div.tiny.muted', {}, `game ${e.game_no} · ${shortDate(LOG.session.played_on)}`))),
+      h('button.btn.sm', { onclick(){ LOG.entry = null; render(); } }, 'Back')));
+
+    wrapEl.append(h('div.seg', { style:{ margin:'12px 0' } },
+      h('button', { 'aria-pressed': LOG.mode === 'pins', onclick(){ setMode('pins'); draw(); } }, 'Full — tap the pins'),
+      h('button', { 'aria-pressed': LOG.mode === 'quick', onclick(){ setMode('quick'); draw(); } }, 'Quick — just the score')));
+
+    if (LOG.mode === 'quick'){
+      const input = h('input', { type:'number', min:0, max:300, inputmode:'numeric',
+        placeholder:'0 – 300', value: e.quick ?? '' });
+      const msg = h('div.err', {});
+      wrapEl.append(card(
+        h('label.f', {}, h('span', {}, 'Final score for this game'), input),
+        msg,
+        h('p.tiny.muted', { style:{ marginTop:'10px' } },
+          'Games entered this way get a small amber dot. They count for average, high game and records, but anything that needs to know what happened ball by ball skips them.'),
+        h('button.btn.pri.wide.big', { style:{ marginTop:'12px' },
+          onclick(){
+            const v = Number(input.value);
+            if (!input.value.trim() || !Number.isInteger(v)){ msg.textContent = 'Type a whole number.'; return; }
+            if (!B.isPossibleScore(v)){ msg.textContent = `${v} is not a score you can bowl. It has to be between 0 and 300.`; return; }
+            saveGame(v, []);
+          } }, 'Save this game')));
+      return;
+    }
+
+    /* live score, then the strip, same layout as the monitor above the lane */
+    wrapEl.append(h('div.card', {},
+      h('div.spread', {},
+        h('div', {}, h('div.up', {}, 'Score so far'), h('div.big.n', { style:{ fontSize:'30px', fontWeight:750 } }, sc.total)),
+        h('div', { style:{ textAlign:'right' } },
+          h('div.up', {}, done ? 'Game complete' : `Frame ${st.frame}`),
+          h('div.small.muted', {}, done ? 'Save it below' : `Ball ${st.roll} · ${B.cnt(st.standing)} standing`))),
+      h('div', { style:{ marginTop:'10px' } }, scoreStrip(sc.frames, done ? null : st.frame))));
+
+    if (done){
+      wrapEl.append(h('div.grid2', { style:{ marginTop:'12px' } },
+        h('button.btn.big', { onclick(){ e.rolls.pop(); draw(); } }, 'Undo last ball'),
+        h('button.btn.pri.big', { onclick(){ saveGame(sc.total, e.rolls); } }, 'Save this game')));
+      return;
+    }
+
+    /* shortcuts, then the deck */
+    const standing = st.standing;
+    const fresh = standing === B.FULL;
+    wrapEl.append(h('div.deckbtns', {},
+      h('button.btn', { disabled: !fresh, onclick(){ throwBall(B.FULL); } }, 'Strike'),
+      h('button.btn', { disabled: fresh, onclick(){ throwBall(standing); } }, 'Spare'),
+      h('button.btn', { onclick(){ throwBall(0); } }, 'Gutter'),
+      h('button.btn', { disabled: !e.sel && !e.rolls.length,
+        onclick(){ if (e.sel) e.sel = 0; else e.rolls.pop(); draw(); } }, 'Undo')));
+
+    e.sel = (e.sel || 0) & standing;
+    wrapEl.append(h('div.deckwrap', {}, pinDeck({
+      standing, selected: e.sel,
+      onToggle(p){ e.sel ^= B.bit(p); draw(); } })));
+
+    const n = B.cnt(e.sel);
+    wrapEl.append(h('button.btn.pri.wide.big', { style:{ marginTop:'6px' },
+      onclick(){ throwBall(e.sel); } },
+      n === 0 ? 'Nothing down — confirm' : `${n} down${n === B.cnt(standing) ? (standing === B.FULL ? ' — strike!' : ' — spare!') : ''} — confirm`));
+    wrapEl.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
+      'Tap every pin you knocked over, then confirm. Dark pins were already down.'));
+  }
+  function throwBall(mask){
+    const st = B.deckState(e.rolls);
+    if (st.done) return;
+    e.rolls.push({ frame:st.frame, roll:st.roll, standing_before:st.standing, knocked: mask & st.standing });
+    e.sel = 0;
+    draw();
+  }
+  async function saveGame(total, rolls){
+    const g = {
+      id: e.id || uid(), session_id: LOG.session.id, profile_id: e.profile_id, game_no: e.game_no,
+      total_score: total, entry_mode: LOG.mode, logged_by: state.user.id,
+      created_at: e.created_at || new Date().toISOString(), updated_at: new Date().toISOString(),
+    };
+    try {
+      await db.saveGame(g, rolls.map(r => ({ frame:r.frame, roll:r.roll, standing_before:r.standing_before, knocked:r.knocked })), e.before || null);
+      await load();
+      LOG.entry = null;
+      toast(`${D.profile.get(g.profile_id)?.display_name || 'Game'} — ${total}`);
+      render();
+    } catch (err){ toast('Could not save: ' + (err.message || err)); }
+  }
+  draw();
+  return wrapEl;
+}
+
+function startEntry(profile_id, game_no, existing){
+  LOG.entry = existing
+    ? { profile_id, game_no, id: existing.id, created_at: existing.created_at,
+        rolls: existing.rolls.map(r => ({ ...r })), quick: existing.total_score,
+        before: { ...existing, rolls: undefined, session: undefined, edits: undefined } }
+    : { profile_id, game_no, rolls: [], sel: 0 };
+  if (existing) setMode(existing.entry_mode);
+  render();
+}
+
+/* ---- the session builder ---- */
+function sessionForm(){
+  const box = h('div', {});
+  const today = new Date().toISOString().slice(0,10);
+  const date = h('input', { type:'date', value: today, max: today });
+  const house = h('input', { type:'text', list:'houses', value: HOUSES[0], placeholder:'Which alley?' });
+  const title = h('input', { type:'text', placeholder:'optional — “Drew’s birthday”' });
+  const chosen = new Map();
+  if (state.me) chosen.set(state.me.id, null);
+  const teamsOn = { on:false };
+  const people = h('div.people', {});
+  function drawPeople(){
+    clear(people);
+    for (const p of [...state.profiles].sort((a,b) => a.display_name.localeCompare(b.display_name))){
+      const on = chosen.has(p.id);
+      const btn = h('button.person.tap', { style: on ? { borderColor:'var(--blue)' } : {},
+        onclick(){ if (on) chosen.delete(p.id); else chosen.set(p.id, teamsOn.on ? 'A' : null); drawPeople(); } },
+        h('div.row', {}, avatar(p),
+          h('div', {}, h('div', { style:{ fontWeight:650, fontSize:'13px' } }, p.display_name),
+            h('div.tiny', { cls: on ? 'good' : 'muted' }, on ? 'bowling' : 'tap to add'))));
+      if (on && teamsOn.on){
+        const sel = h('select', { style:{ marginTop:'8px', padding:'6px' },
+          onchange(ev){ chosen.set(p.id, ev.target.value); ev.stopPropagation(); },
+          onclick(ev){ ev.stopPropagation(); } },
+          ['A','B','C','D'].map(t => h('option', { value:t, selected: chosen.get(p.id) === t }, 'Team ' + t)));
+        btn.append(sel);
+      }
+      people.append(btn);
+    }
+  }
+  drawPeople();
+  const teamToggle = h('div.seg', {},
+    h('button', { 'aria-pressed':'true', onclick(){ teamsOn.on = false; syncTeams(); } }, 'Everyone for themselves'),
+    h('button', { 'aria-pressed':'false', onclick(){ teamsOn.on = true; syncTeams(); } }, 'Split into teams'));
+  function syncTeams(){
+    [...teamToggle.children].forEach((b,i) => b.setAttribute('aria-pressed', String(teamsOn.on === (i === 1))));
+    if (teamsOn.on) for (const k of chosen.keys()) if (!chosen.get(k)) chosen.set(k, 'A');
+    else for (const k of chosen.keys()) chosen.set(k, null);
+    drawPeople();
+  }
+  box.append(
+    sectionHead('Log a session', 'Start with the outing. Scores come next, and one person can enter everyone’s.'),
+    card(
+      h('label.f', {}, h('span', {}, 'Date'), date),
+      h('label.f', {}, h('span', {}, 'Alley'), house),
+      h('datalist', { id:'houses' }, HOUSES.map(x => h('option', { value:x }))),
+      h('label.f', {}, h('span', {}, 'Title'), title)),
+    sectionHead('Who bowled?'),
+    card(teamToggle, h('div', { style:{ marginTop:'12px' } }, people),
+      state.profiles.length < 2 ? h('p.tiny.muted', { style:{ marginTop:'10px' } },
+        'Anyone else who bowls needs an account of their own — send them the site address and they can sign up in a minute.') : null),
+    h('button.btn.pri.wide.big', { style:{ marginTop:'14px' },
+      async onclick(){
+        if (!chosen.size){ toast('Pick at least one bowler.'); return; }
+        const row = { id: uid(), played_on: date.value || today, house: house.value.trim() || HOUSES[0],
+          title: title.value.trim() || null, created_by: state.user.id, created_at: new Date().toISOString() };
+        try {
+          await db.createSession(row, [...chosen.entries()].map(([profile_id, team]) => ({ profile_id, team })));
+          await load();
+          LOG.session = D.sessions.find(x => x.id === row.id) || sessionSummary(row);
+          LOG.step = 'scores';
+          render();
+        } catch (err){ toast('Could not start the session: ' + (err.message || err)); }
+      } }, 'Start logging scores'));
+  return box;
+}
+
+/* ---- the grid: game 1 for everyone, then game 2 ---- */
+function sessionScores(){
+  const ses = D.sessions.find(x => x.id === LOG.session.id) || LOG.session;
+  const box = h('div', {});
+  const maxGames = Math.max(1, ...ses.lines.map(l => l.n));
+  box.append(h('div.spread', {},
+    h('div', {}, h('h2', {}, dateLabel(ses.played_on)),
+      h('p.sub', {}, `${ses.house}${ses.title ? ' · ' + ses.title : ''}`)),
+    h('button.btn.sm', { onclick(){ LOG.step = 'pick'; LOG.session = null; render(); } }, 'Done')));
+
+  for (const line of [...ses.lines].sort((a,b) => a.name.localeCompare(b.name))){
+    const games = line.games;
+    const row = card(
+      h('div.spread', {},
+        h('div.row', {}, avatar(D.profile.get(line.id)),
+          h('div', {}, h('div', { style:{ fontWeight:650 } }, line.name),
+            h('div.tiny.muted', {}, line.team ? 'team ' + line.team : 'no team'))),
+        h('div', { style:{ textAlign:'right' } },
+          h('div.up', {}, 'series'), h('div.n', { style:{ fontWeight:700 } }, line.series || '—'))),
+      h('div.row.wrapf', { style:{ marginTop:'10px' } },
+        games.map(g => h('button.chip.tap', { onclick(){ startEntry(line.id, g.game_no, g); } },
+          quickDot(g), `G${g.game_no}`, h('b', { style:{ marginLeft:'2px' } }, g.total_score))),
+        h('button.btn.sm.pri', { onclick(){ startEntry(line.id, games.length + 1); } },
+          `Log game ${games.length + 1}`)));
+    box.append(row);
+  }
+  box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
+    'Tap a score to fix it. Every edit is written down and shown next to the game.'));
+  return box;
+}
+
+function tabLog(){
+  const box = h('div', {});
+  if (!state.user){
+    box.append(sectionHead('Log a session', 'You need to be signed in to add scores. Reading is open to everyone.'));
+    box.append(authCard());
+    return box;
+  }
+  if (!state.me || !state.me.display_name){ box.append(profileSetup()); return box; }
+  if (LOG.entry) { box.append(entryScreen()); return box; }
+  if (LOG.step === 'scores' && LOG.session){ box.append(sessionScores()); return box; }
+
+  const mine = D.sessions.filter(s => {
+    const days = (Date.now() - new Date(s.played_on + 'T12:00:00').getTime()) / 864e5;
+    return days < 14;
+  }).slice(0, 4);
+  if (mine.length){
+    box.append(sectionHead('Carry on with a recent session'));
+    for (const s2 of mine){
+      box.append(h('button.card.tap.wide', { style:{ display:'block', width:'100%' },
+        onclick(){ LOG.session = s2; LOG.step = 'scores'; render(); } },
+        h('div.spread', {},
+          h('div', {}, h('div', { style:{ fontWeight:650 } }, dateLabel(s2.played_on)),
+            h('div.tiny.muted', {}, `${s2.house} · ${s2.lines.filter(l => l.n).length} bowlers · ${s2.games.length} games`)),
+          h('span.chip', {}, 'add scores'))));
+    }
+  }
+  box.append(sessionForm());
+  box.append(glossary([GLOSS.quick,
+    ['Who can log what', 'Anyone signed in can log a game for anyone else — one person usually enters the whole lane. The game always shows who entered it.'],
+    ['Fixing a mistake', 'Tap any score to edit it. The old value is kept and shown in the history, so nothing quietly changes.'],
+  ]));
+  return box;
+}
+
+/* ======================================================================
+   ACCOUNTS
+   ====================================================================== */
+const profileComplete = p => !!(p && p.display_name && p.hand && p.home_house);
+
+function authCard(){
+  const email = h('input', { type:'email', placeholder:'you@example.com', autocomplete:'email' });
+  const pass  = h('input', { type:'password', placeholder:'at least 6 characters', autocomplete:'current-password' });
+  const name  = h('input', { type:'text', placeholder:'the name everyone calls you' });
+  const msg   = h('div.err', {});
+  let mode = 'in';
+  const box = card();
+  function draw(){
+    clear(box);
+    box.append(
+      h('div.seg', {},
+        h('button', { 'aria-pressed': mode === 'in',  onclick(){ mode = 'in';  draw(); } }, 'Sign in'),
+        h('button', { 'aria-pressed': mode === 'up',  onclick(){ mode = 'up';  draw(); } }, 'Create an account')),
+      mode === 'up' ? h('label.f', {}, h('span', {}, 'Display name'), name) : null,
+      h('label.f', {}, h('span', {}, 'Email'), email),
+      h('label.f', {}, h('span', {}, 'Password'), pass),
+      msg,
+      h('button.btn.pri.wide.big', { style:{ marginTop:'12px' }, async onclick(){
+        msg.textContent = '';
+        try {
+          if (mode === 'up'){
+            if (!name.value.trim()) throw new Error('Tell us your name first.');
+            await db.signUp({ email: email.value.trim(), password: pass.value, name: name.value.trim() });
+            msg.className = 'ok';
+            msg.textContent = 'Account made. Check your email if it asks you to confirm, then sign in.';
+          } else {
+            await db.signIn({ email: email.value.trim(), password: pass.value });
+          }
+          await boot(true);
+        } catch (err){ msg.className = 'err'; msg.textContent = err.message || String(err); }
+      } }, mode === 'up' ? 'Create account' : 'Sign in'),
+      h('button.btn.wide', { style:{ marginTop:'8px' }, async onclick(){
+        msg.textContent = '';
+        try {
+          if (!email.value.trim()) throw new Error('Type your email address first.');
+          await db.magic({ email: email.value.trim() });
+          msg.className = 'ok'; msg.textContent = 'Sent. Open the link in your email and you are in — no password needed.';
+        } catch (err){ msg.className = 'err'; msg.textContent = err.message || String(err); }
+      } }, 'Email me a sign-in link instead'),
+      h('p.tiny.muted', { style:{ marginTop:'10px' } },
+        'Everything on this site is readable without an account. Signing in is only for adding scores.'));
+  }
+  draw();
+  return box;
+}
+
+function profileSetup(){
+  const p = state.me || {};
+  const name = h('input', { type:'text', value: p.display_name || '', placeholder:'e.g. Drew' });
+  const hand = h('select', {}, [['R','Right'],['L','Left']].map(([v,l]) =>
+    h('option', { value:v, selected: p.hand === v }, l)));
+  const weight = h('input', { type:'number', min:6, max:20, value: p.ball_weight || 15 });
+  const house = h('input', { type:'text', list:'houses2', value: p.home_house || HOUSES[0] });
+  const avatarUrl = h('input', { type:'text', value: p.avatar_url || '', placeholder:'optional — link to a picture' });
+  const file = h('input', { type:'file', accept:'image/*' });
+  const msg = h('div.err', {});
+  return card(
+    h('h2', {}, state.me && state.me.hand ? 'Your profile' : 'One quick thing first'),
+    h('p.sub', { style:{ marginTop:'4px' } }, 'Thirty seconds and you never see this again.'),
+    h('label.f', {}, h('span', {}, 'Display name'), name),
+    h('label.f', {}, h('span', {}, 'Which hand do you bowl with?'), hand),
+    h('label.f', {}, h('span', {}, 'Usual ball weight (pounds)'), weight),
+    h('label.f', {}, h('span', {}, 'Home alley'), house),
+    h('datalist', { id:'houses2' }, HOUSES.map(x => h('option', { value:x }))),
+    h('label.f', {}, h('span', {}, 'Picture (optional)'), avatarUrl),
+    h('label.f', {}, h('span', {}, '…or upload one'), file),
+    msg,
+    h('button.btn.pri.wide.big', { style:{ marginTop:'12px' }, async onclick(){
+      msg.className = 'err'; msg.textContent = '';
+      if (!name.value.trim()){ msg.textContent = 'A name, please.'; return; }
+      let url = avatarUrl.value.trim() || null;
+      try {
+        if (file.files && file.files[0]){
+          const f = file.files[0];
+          if (db.kind === 'live'){
+            const key = `${state.user.id}/${Date.now()}-${f.name.replace(/[^\w.\-]/g,'')}`;
+            const { error } = await db.sb.storage.from('avatars').upload(key, f, { upsert:true });
+            if (error) throw error;
+            url = db.sb.storage.from('avatars').getPublicUrl(key).data.publicUrl;
+          } else {
+            url = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
+          }
+        }
+        await db.saveProfile({
+          display_name: name.value.trim(), hand: hand.value,
+          ball_weight: Number(weight.value) || null, home_house: house.value.trim() || null,
+          avatar_url: url,
+          handle: (p.handle || name.value.trim().toLowerCase().replace(/[^a-z0-9_]/g,'').slice(0,20) || null),
+        });
+        await load(); toast('Saved'); render();
+      } catch (err){ msg.textContent = err.message || String(err); }
+    } }, 'Save and carry on'));
+}
+
+/* ======================================================================
+   TAB 1 — HOME
+   ====================================================================== */
+function leaderboardTable(rows){
+  return sortTable({
+    initial:'avg', dir:-1, onRow: r => showBowler(r.id),
+    empty:'No games logged yet. Be the first.',
+    cols:[
+      { key:'name', label:'Bowler', text:true, value:r => r.name,
+        cell:r => h('div.row', {}, avatar(r.profile), h('span', { style:{ fontWeight:650 } }, r.name)) },
+      { key:'avg',  label:'Average', value:r => r.avg, fmt:one },
+      { key:'games',label:'Games',   value:r => r.games },
+      { key:'high', label:'High game', value:r => r.high },
+      { key:'series',label:'High series', value:r => r.highSeries },
+      { key:'c200', label:'200+',    value:r => r.c200 },
+      { key:'clean',label:'Clean',   value:r => r.clean },
+      { key:'sp',   label:'Strike %',value:r => r.strikePct, fmt:pc },
+      { key:'sc',   label:'Spare %', value:r => r.sparePct,  fmt:pc },
+      { key:'trend',label:'Trend',   value:r => (r.last10avg != null && r.avg != null) ? r.last10avg - r.avg : null,
+        cell(r){
+          const d = (r.last10avg != null && r.avg != null) ? r.last10avg - r.avg : null;
+          return h('div.row', { style:{ justifyContent:'flex-end', gap:'6px' } },
+            sparkline(r.last10),
+            h('span.n.tiny', { cls: d == null ? 'muted' : d >= 0 ? 'good' : 'bad' },
+              d == null ? '—' : (d >= 0 ? '+' : '') + one(d)));
+        } },
+    ],
+    rows,
+  });
+}
+function handicapTable(rows){
+  return sortTable({
+    initial:'hcap', dir:-1, onRow: r => showBowler(r.id),
+    cols:[
+      { key:'name', label:'Bowler', text:true, value:r => r.name },
+      { key:'avg',  label:'Average', value:r => r.avg, fmt:one },
+      { key:'hcap', label:'Handicap', value:r => r.handicap },
+      { key:'scr',  label:'Average + handicap', value:r => (r.avg || 0) + r.handicap, fmt:one },
+    ],
+    rows,
+  });
+}
+function activityFeed(limit = 30){
+  const items = [];
+  for (const g of D.games) items.push({ at: g.created_at, kind:'log', g });
+  for (const e of state.edits) items.push({ at: e.at, kind: e.after ? 'edit' : 'delete', e });
+  items.sort((a,b) => String(b.at).localeCompare(String(a.at)));
+  const list = items.slice(0, limit);
+  if (!list.length) return h('p.empty', {}, 'Nothing logged yet.');
+  return h('div', {}, list.map(it => {
+    if (it.kind === 'log'){
+      const g = it.g, who = D.profile.get(g.profile_id), by = D.profile.get(g.logged_by);
+      const self = g.profile_id === g.logged_by;
+      return h('button.feed.tap', { style:{ width:'100%' }, onclick(){ showGame(g.id); } },
+        avatar(who),
+        h('div', {},
+          h('div.small', {}, h('b', {}, who?.display_name || '?'), ' bowled ',
+            h('b.n', {}, g.total_score), quickDot(g),
+            g.edits.length ? h('span.chip', { style:{ marginLeft:'6px' } }, 'edited') : null),
+          h('div.tiny.muted', {}, self ? 'logged it themselves' : `logged by ${by?.display_name || 'someone'}`,
+            ' · ', shortDate(g.played_on))),
+        h('div.when', {}, ago(it.at)));
+    }
+    const e = it.e, editor = D.profile.get(e.editor_id);
+    const g = D.games.find(x => x.id === e.game_id);
+    const subject = D.profile.get((e.before && e.before.profile_id) || g?.profile_id);
+    return h('div.feed', {}, avatar(editor),
+      h('div', {}, h('div.small', {},
+          h('b', {}, editor?.display_name || 'Someone'),
+          it.kind === 'delete' ? ' deleted ' : ' changed ',
+          h('b', {}, (subject?.display_name || 'a') + '’s'), ' game',
+          e.before && e.after ? ` from ${e.before.total_score} to ${e.after.total_score}` :
+          e.before ? ` (was ${e.before.total_score})` : ''),
+        h('div.tiny.muted', {}, 'every change is kept')),
+      h('div.when', {}, ago(it.at)));
+  }));
+}
+
+function tabHome(){
+  const box = h('div', {});
+  if (state.mode === 'stub' && DEMO)
+    box.append(h('div.card', { style:{ borderColor:'rgba(201,133,0,.5)' } },
+      h('div.up.gold', {}, 'Demo data'),
+      h('p.small.ink2', { style:{ marginTop:'4px' } },
+        'These bowlers are made up so you can see what a full season looks like. Drop the ?demo=1 off the address for the real thing.')));
+  if (!CONFIGURED && !STUB)
+    box.append(h('div.card', { style:{ borderColor:'rgba(230,103,103,.5)' } },
+      h('div.up', { style:{ color:'var(--red)' } }, 'Not connected yet'),
+      h('p.small.ink2', { style:{ marginTop:'4px' } },
+        'Open index.html, find the SUPA block near the top of the script, and paste in your Supabase URL and anon key. Step 3 of the README.')));
+  if (state.user && !profileComplete(state.me)) box.append(profileSetup());
+
+  const all = [...D.stats.values()];
+  const played = all.filter(s2 => s2.games > 0);
+  const allScores = D.games.map(g => g.total_score);
+  const best = D.games.reduce((a,g) => !a || g.total_score > a.total_score ? g : a, null);
+
+  if (D.leader){
+    box.append(h('div.champ', {},
+      h('div.spread', {},
+        h('div.row', {}, avatar(D.leader.profile, true),
+          h('div', {}, h('div.up', {}, 'Top of the board'),
+            h('div', { style:{ fontSize:'21px', fontWeight:750, letterSpacing:'-.02em' } }, D.leader.name),
+            h('div.small.muted', {}, `${one(D.leader.avg)} average over ${D.leader.games} games`))),
+        h('button.btn.sm', { onclick(){ showBowler(D.leader.id); } }, 'See'))));
+  }
+
+  box.append(tiles([
+    tile('Group average', one(B.mean(allScores)), `${played.length} bowler${played.length === 1 ? '' : 's'}`),
+    tile('Games logged', int(D.games.length), 'all time'),
+    tile('Highest game', best ? int(best.total_score) : '—',
+      best ? `${D.profile.get(best.profile_id)?.display_name || '?'} · ${shortDate(best.played_on)}` : 'nothing yet'),
+    tile('Sessions', int(D.sessions.length), 'nights out'),
+  ]));
+
+  box.append(h('button.btn.pri.wide.big', { onclick(){ go('log'); } }, '＋  Log a session'));
+
+  box.append(sectionHead('Everyone', 'Tap anyone to see everything about them.'));
+  box.append(h('div.people', {}, all.length
+    ? [...all].sort((a,b) => (b.avg ?? -1) - (a.avg ?? -1)).map(personButton)
+    : h('p.empty', {}, 'No bowlers yet.')));
+
+  box.append(sectionHead('The board', `Average is the headline. Everything else is a supporting column. ${MIN_GAMES} games to qualify.`));
+  box.append(h('div.card.pad0', {}, leaderboardTable(D.ranked)));
+  if (D.unranked.length){
+    box.append(h('h3.up', { style:{ marginTop:'14px' } }, 'Not enough games yet'));
+    box.append(h('div.card.pad0', {}, sortTable({
+      initial:'games', dir:-1, onRow: r => showBowler(r.id),
+      cols:[
+        { key:'name', label:'Bowler', text:true, value:r => r.name },
+        { key:'games', label:'Games so far', value:r => r.games },
+        { key:'need', label:'To go', value:r => MIN_GAMES - r.games },
+        { key:'avg', label:'Average', value:r => r.avg, fmt:one },
+      ], rows: D.unranked })));
+  }
+
+  box.append(sectionHead('Handicap', 'So the rest of us have a chance. This is the second table, not the real one.'));
+  box.append(h('div.card.pad0', {}, handicapTable(D.ranked.concat(D.unranked))));
+
+  box.append(sectionHead('Recent activity', 'Who logged what, for whom, and when. This is the whole enforcement mechanism.'));
+  box.append(h('div.card', {}, activityFeed(30)));
+
+  box.append(glossary([GLOSS.avg, GLOSS.games, GLOSS.high, GLOSS.series, GLOSS.c200, GLOSS.clean,
+    GLOSS.strike, GLOSS.spare, GLOSS.trend, GLOSS.hcap, GLOSS.minimum, GLOSS.quick]));
+  return box;
+}
+
+/* ======================================================================
+   THE PROFILE — tap anyone, see everything
+   ====================================================================== */
+function rollingAverage(games, window = 10){
+  const pts = [];
+  for (let i = 0; i < games.length; i++){
+    const slice = games.slice(Math.max(0, i - window + 1), i + 1);
+    pts.push({ x: shortDate(games[i].played_on), y: slice.reduce((s,g) => s + g.total_score, 0) / slice.length });
+  }
+  return pts;
+}
+function showBowler(id){
+  const st = D.stats.get(id);
+  if (!st) return;
+  openSheet(st.name, body => {
+    const p = st.profile;
+    body.append(h('div.row', { style:{ margin:'14px 0' } }, avatar(p, true),
+      h('div', {}, h('div.small.ink2', {},
+        [p.hand === 'L' ? 'Left-handed' : p.hand === 'R' ? 'Right-handed' : null,
+         p.ball_weight ? p.ball_weight + ' lb ball' : null, p.home_house].filter(Boolean).join(' · ') || 'no profile details yet'),
+        h('div.tiny.muted', {}, `${st.games} games · ${st.sessions} sessions · joined ${p.joined_at ? dateLabel(p.joined_at) : '—'}`))));
+
+    if (!st.games){ body.append(h('p.empty', {}, 'No games logged yet.')); return; }
+
+    body.append(tiles([
+      tile('Average', one(st.avg), `${st.games} games`),
+      tile('High game', int(st.high), st.gameList.length ? shortDate(st.gameList.reduce((a,g) => g.total_score > a.total_score ? g : a).played_on) : ''),
+      tile('High series', int(st.highSeries), 'best night'),
+      tile('Handicap', int(st.handicap), '90% of the gap to 200'),
+    ]));
+    body.append(tiles([
+      tile('Consistency', st.sd == null ? '—' : one(st.sd), 'lower is steadier'),
+      tile('Clean games', int(st.clean), 'no open frames'),
+      tile('200+ games', int(st.c200), st.games ? pc(st.c200 / st.games * 100) + ' of games' : ''),
+      tile('Longest streak', int(st.roll.streak), st.roll.streak >= 3 ? streakName(st.roll.streak) : 'strikes in a row'),
+    ]));
+
+    if (st.pinGames){
+      body.append(sectionHead('How the pins fall', `From ${st.pinGames} game${st.pinGames === 1 ? '' : 's'} logged ball by ball.`));
+      body.append(card(
+        stackBar([
+          { label:'Strikes', value: st.roll.strikes, color:'var(--blue)' },
+          { label:'Spares',  value: st.roll.spares,  color:'var(--aqua)' },
+          { label:'Opens',   value: st.roll.opens,   color:'var(--red)' },
+        ]),
+        h('div', { style:{ marginTop:'14px' } }, barRows([
+          { label:'First ball', value: st.firstBall, text: one(st.firstBall), tipText:'Average pins on your first ball' },
+          { label:'Strike %',   value: st.strikePct, text: pc(st.strikePct) },
+          { label:'Spare %',    value: st.sparePct,  text: pc(st.sparePct) },
+          { label:'Mark %',     value: st.markPct,   text: pc(st.markPct) },
+          { label:'Carry %',    value: st.carryPct,  text: pc(st.carryPct) },
+          { label:'Split %',    value: st.splitPct,  text: pc(st.splitPct), color:'gd' },
+        ].map(r => ({ ...r, value: r.value == null ? 0 : (r.label === 'First ball' ? r.value * 10 : r.value) })))),
+        h('div.row.wrapf', { style:{ marginTop:'12px' } },
+          h('span.chip', {}, `10th frame: ${one(st.tenthAvg)} pins`),
+          h('span.chip', {}, `splits: ${pc1(st.splitRate)} of first balls`),
+          h('span.chip', {}, `opens: ${pc(st.openPct)} of frames`))));
+
+      body.append(sectionHead('First-ball pinfall', 'How many pins your opening ball knocks down.'));
+      body.append(card(barRows(st.roll.firstBallDist.map((n, pins) => ({
+        label: pins === 10 ? 'strike' : pins + ' pins', value: n, text: String(n),
+        color: pins === 10 ? '' : pins >= 8 ? 'g' : 'r',
+      })).filter(r => r.value > 0).reverse())));
+
+      if (st.leaves.length){
+        body.append(sectionHead('What you leave standing', 'Your most common leave after the first ball.'));
+        body.append(card(barRows(st.leaves.map(l => ({
+          label: l.name, value: l.n, text: String(l.n),
+          color: l.split ? 'r' : '', tipText: `${l.name}${l.split ? ' (a split)' : ''} — left ${l.n} times`,
+        })))));
+      }
+    } else {
+      body.append(h('p.empty', {}, 'Every game so far was entered as just a score, so there is no ball-by-ball detail to show.'));
+    }
+
+    body.append(sectionHead('Getting better?', 'Your rolling ten-game average.'));
+    body.append(card(lineChart(rollingAverage(st.gameList), { label:'avg' })));
+
+    const yrs = new Map();
+    for (const g of st.gameList){
+      const y = yearOf(g.played_on);
+      if (!yrs.has(y)) yrs.set(y, []);
+      yrs.get(y).push(g);
+    }
+    body.append(sectionHead('Season by season', 'A season is a calendar year.'));
+    body.append(h('div.card.pad0', {}, sortTable({
+      initial:'year', dir:-1,
+      cols:[
+        { key:'year', label:'Season', value:r => r.year },
+        { key:'games', label:'Games', value:r => r.games },
+        { key:'avg', label:'Average', value:r => r.avg, fmt:one },
+        { key:'high', label:'High', value:r => r.high },
+        { key:'low', label:'Low', value:r => r.low },
+        { key:'sessions', label:'Sessions', value:r => r.sessions },
+      ],
+      rows: [...yrs.entries()].map(([year, gs]) => ({
+        year, games: gs.length, avg: B.mean(gs.map(g => g.total_score)),
+        high: Math.max(...gs.map(g => g.total_score)), low: Math.min(...gs.map(g => g.total_score)),
+        sessions: new Set(gs.map(g => g.session_id)).size,
+      })),
+    })));
+
+    const sorted = [...st.gameList].sort((a,b) => b.total_score - a.total_score);
+    body.append(sectionHead('Best and worst'));
+    body.append(h('div.card.pad0', {}, gameTable(sorted.slice(0,5).concat(sorted.slice(-3).reverse()))));
+
+    const tr = teamRecord(id);
+    body.append(sectionHead('With other people'));
+    body.append(card(
+      h('div.row.wrapf', {},
+        h('span.chip', {}, `team record ${tr.won}–${tr.played - tr.won}`),
+        h('span.chip', {}, `win rate ${pc(tr.winPct)}`),
+        h('span.chip', {}, `MVP ${tr.mvp}×`),
+        tr.most ? h('span.chip', {}, `most with ${tr.most.name} (${tr.most.n})`) : null,
+        tr.never ? h('span.chip', {}, `never won with ${tr.never.name}`) : null)));
+
+    body.append(sectionHead('Every session'));
+    body.append(h('div.card.pad0', {}, sortTable({
+      initial:'date', dir:-1, onRow: r => showSession(r.sid),
+      cols:[
+        { key:'date', label:'Date', text:true, value:r => r.played_on, fmt:v => shortDate(v) },
+        { key:'house', label:'Alley', text:true, value:r => r.house },
+        { key:'n', label:'Games', value:r => r.n },
+        { key:'series', label:'Series', value:r => r.total },
+        { key:'avg', label:'Average', value:r => r.total / r.n, fmt:one },
+      ],
+      rows: st.seriesList.map(s2 => ({ ...s2, house: D.session.get(s2.sid)?.house || '' })).sort((a,b) => b.played_on.localeCompare(a.played_on)),
+    })));
+
+    body.append(glossary([GLOSS.avg, GLOSS.sd, GLOSS.firstball, GLOSS.strike, GLOSS.spare, GLOSS.mark,
+      GLOSS.carry, GLOSS.split, GLOSS.splitpct, GLOSS.open, GLOSS.tenth, GLOSS.streak, GLOSS.leave, GLOSS.quick]));
+  }, `${one(st.avg)} average · ${st.games} games`);
+}
+function streakName(n){
+  return ({3:'a turkey', 4:'a four-bagger', 5:'a five-bagger', 6:'a six-pack'})[n] || (n >= 7 ? `${n} in a row` : 'strikes in a row');
+}
+function gameTable(games){
+  return sortTable({
+    initial:'score', dir:-1, onRow: g => showGame(g.id),
+    empty:'No games.',
+    cols:[
+      { key:'date', label:'Date', text:true, value:g => g.played_on, fmt:v => shortDate(v) },
+      { key:'who', label:'Bowler', text:true, value:g => D.profile.get(g.profile_id)?.display_name || '?' },
+      { key:'no', label:'Game', value:g => g.game_no },
+      { key:'score', label:'Score', value:g => g.total_score,
+        cell:g => h('span.row', { style:{ justifyContent:'flex-end', gap:'5px' } }, quickDot(g),
+          h('b.n', {}, g.total_score), g.edits.length ? h('span.tiny.muted', {}, '✎') : null) },
+    ],
+    rows: games,
+  });
+}
+
+/* ---- one game, and everything that ever happened to it ---- */
+function showGame(id){
+  const g = D.games.find(x => x.id === id);
+  if (!g) return;
+  const who = D.profile.get(g.profile_id), by = D.profile.get(g.logged_by);
+  const mine = state.user && (state.user.id === g.profile_id || state.user.id === g.logged_by);
+  openSheet(`${who?.display_name || '?'} · ${g.total_score}`, body => {
+    body.append(h('p.small.muted', { style:{ margin:'12px 0' } },
+      `Game ${g.game_no} at ${g.session?.house || 'the alley'} on ${dateLabel(g.played_on)}.`));
+    if (g.entry_mode === 'pins' && g.rolls.length){
+      body.append(card(scoreStrip(B.scoreRolls(g.rolls).frames)));
+      const gs = B.gameStats(g.rolls);
+      body.append(h('div.row.wrapf', {},
+        h('span.chip', {}, `${gs.strikes} strikes`), h('span.chip', {}, `${gs.spares} spares`),
+        h('span.chip', {}, `${gs.opens} opens`), h('span.chip', {}, `first ball ${one(gs.firstBallPins/gs.firstBalls)}`),
+        gs.splits ? h('span.chip', {}, `${gs.splits} split${gs.splits > 1 ? 's' : ''}`) : null,
+        gs.streak >= 3 ? h('span.chip', {}, streakName(gs.streak)) : null));
+    } else {
+      body.append(card(h('div.row', {}, h('span.dot.quick'), h('span.small.ink2', {},
+        'Entered as a final score only — no ball-by-ball detail behind this one.'))));
+    }
+    body.append(sectionHead('Who put this here'));
+    body.append(card(h('p.small.ink2', {},
+      g.profile_id === g.logged_by
+        ? `${who?.display_name} logged it themselves, ${ago(g.created_at)}.`
+        : `${by?.display_name || 'Someone'} logged it for ${who?.display_name}, ${ago(g.created_at)}.`),
+      g.edits.length ? h('div', { style:{ marginTop:'10px' } }, g.edits.map(e => {
+        const ed = D.profile.get(e.editor_id);
+        return h('div.feed', {}, avatar(ed), h('div', {},
+          h('div.small', {}, h('b', {}, ed?.display_name || 'Someone'), e.after
+            ? ` changed the score from ${e.before?.total_score} to ${e.after.total_score}`
+            : ` deleted this game (it was ${e.before?.total_score})`),
+          h('div.tiny.muted', {}, dateLabel(e.at) + ' · ' + ago(e.at))));
+      })) : h('p.tiny.muted', { style:{ marginTop:'8px' } }, 'Never edited.')));
+    if (mine){
+      body.append(h('div.grid2', { style:{ marginTop:'14px' } },
+        h('button.btn', { onclick(){
+          closeSheet(); LOG.session = D.sessions.find(s2 => s2.id === g.session_id); LOG.step = 'scores';
+          startEntry(g.profile_id, g.game_no, g); go('log');
+        } }, 'Edit this game'),
+        h('button.btn.danger', { async onclick(){
+          if (!confirm('Delete this game? The record of the deletion stays visible.')) return;
+          try { await db.deleteGame(g.id); await load(); closeSheet(); toast('Deleted'); render(); }
+          catch (err){ toast('Could not delete: ' + (err.message || err)); }
+        } }, 'Delete')));
+    }
+  });
+}
+
+/* ======================================================================
+   TAB 3 — BOWLERS
+   ====================================================================== */
+function tabBowlers(){
+  const box = h('div', {});
+  box.append(sectionHead('Bowlers', 'Sort by anything. Tap for the whole story.'));
+  const all = [...D.stats.values()];
+  box.append(h('div.card.pad0', {}, sortTable({
+    initial:'avg', dir:-1, onRow: r => showBowler(r.id),
+    empty:'Nobody has signed up yet.',
+    cols:[
+      { key:'name', label:'Bowler', text:true, value:r => r.name,
+        cell:r => h('div.row', {}, avatar(r.profile), h('span', { style:{ fontWeight:650 } }, r.name)) },
+      { key:'avg', label:'Average', value:r => r.avg, fmt:one },
+      { key:'games', label:'Games', value:r => r.games },
+      { key:'high', label:'High', value:r => r.high },
+      { key:'sd', label:'Consistency', value:r => r.sd, fmt:one },
+      { key:'fb', label:'First ball', value:r => r.firstBall, fmt:one },
+      { key:'strike', label:'Strike %', value:r => r.strikePct, fmt:pc },
+      { key:'spare', label:'Spare %', value:r => r.sparePct, fmt:pc },
+      { key:'tenth', label:'10th frame', value:r => r.tenthAvg, fmt:one },
+    ],
+    rows: all,
+  })));
+  box.append(sectionHead('Everyone at a glance'));
+  box.append(h('div.people', {}, all.map(personButton)));
+  box.append(glossary([GLOSS.avg, GLOSS.sd, GLOSS.firstball, GLOSS.strike, GLOSS.spare, GLOSS.tenth, GLOSS.quick]));
+  return box;
+}
+
+/* ======================================================================
+   TAB 4 — SESSIONS
+   ====================================================================== */
+function showSession(id){
+  const ses = D.sessions.find(x => x.id === id);
+  if (!ses) return;
+  openSheet(dateLabel(ses.played_on), body => {
+    body.append(h('p.small.muted', { style:{ margin:'12px 0' } },
+      `${ses.house}${ses.title ? ' · ' + ses.title : ''} · ${ses.lines.filter(l => l.n).length} bowlers · ${ses.games.length} games`));
+    const maxG = Math.max(0, ...ses.lines.map(l => l.n));
+    body.append(h('div.card.pad0', {}, h('div.scrollx', {}, h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, 'Bowler'),
+        Array.from({ length:maxG }, (_,i) => h('th', {}, 'G' + (i+1))),
+        h('th', {}, 'Series'), h('th', {}, 'Team'))),
+      h('tbody', {}, ses.lines.map(l => h('tr.tap', { onclick(){ showBowler(l.id); } },
+        h('td', {}, h('div.row', {}, avatar(D.profile.get(l.id)), l.name)),
+        Array.from({ length:maxG }, (_,i) => {
+          const g = l.games.find(x => x.game_no === i+1);
+          return h('td', {}, g
+            ? h('button.row', { style:{ justifyContent:'flex-end', gap:'4px', width:'100%' },
+                onclick(e){ e.stopPropagation(); showGame(g.id); } },
+                quickDot(g), h('span.n', { cls: g.total_score >= 200 ? 'gold' : '' }, g.total_score))
+            : h('span.muted', {}, '—'));
+        }),
+        h('td', {}, h('b.n', {}, l.series || '—')),
+        h('td', {}, l.team ? h('span.chip', {}, 'Team ' + l.team) : h('span.muted', {}, '—')))))))));
+
+    if (ses.teams.length){
+      body.append(sectionHead('Teams'));
+      body.append(card(barRows(ses.teams.map(t => ({
+        label: 'Team ' + t.team, value: t.total, text: int(t.total),
+        color: ses.winner && ses.winner.team === t.team ? 'g' : '',
+        tipText: `${t.members.map(m => m.name).join(', ')} — ${t.total} pins`,
+      }))), ses.winner
+        ? h('p.small.ink2', { style:{ marginTop:'8px' } },
+            `Team ${ses.winner.team} took it — ${ses.winner.members.map(m => m.name).join(' and ')}.`)
+        : h('p.tiny.muted', { style:{ marginTop:'8px' } }, 'No teams that night.')));
+    }
+    if (ses.mvp && ses.mvp.n){
+      body.append(card(h('div.spread', {},
+        h('div.row', {}, avatar(D.profile.get(ses.mvp.id)),
+          h('div', {}, h('div.up.gold', {}, 'Session MVP'),
+            h('div', { style:{ fontWeight:700 } }, ses.mvp.name))),
+        h('div', { style:{ textAlign:'right' } },
+          h('div.big.n', { style:{ fontSize:'22px', fontWeight:750 } }, ses.mvp.series),
+          h('div.tiny.muted', {}, `${ses.mvp.n} games`)))));
+    }
+    body.append(glossary([
+      ['Series', 'Every game one person bowled that night, added up.'],
+      ['Session MVP', 'The highest series of the night. Ties go to whoever bowled fewer games.'],
+      ['Team totals', 'All the pins from everyone on that team that night. Most pins wins.'],
+      GLOSS.quick,
+    ]));
+  }, ses.house);
+}
+function tabSessions(){
+  const box = h('div', {});
+  box.append(sectionHead('Sessions', 'Every night out, newest first.'));
+  const houses = [...new Set(D.sessions.map(s2 => s2.house))];
+  const years = [...new Set(D.sessions.map(s2 => yearOf(s2.played_on)))].sort((a,b) => b - a);
+  const filter = { house:'', year:'' };
+  const list = h('div', {});
+  const bar = h('div.row.wrapf', { style:{ marginBottom:'4px' } },
+    h('select', { onchange(e){ filter.house = e.target.value; draw(); } },
+      h('option', { value:'' }, 'Every alley'), houses.map(x => h('option', { value:x }, x))),
+    h('select', { onchange(e){ filter.year = e.target.value; draw(); } },
+      h('option', { value:'' }, 'Every year'), years.map(y => h('option', { value:y }, y))));
+  function draw(){
+    clear(list);
+    const rows = D.sessions.filter(s2 =>
+      (!filter.house || s2.house === filter.house) && (!filter.year || String(yearOf(s2.played_on)) === filter.year));
+    if (!rows.length){ list.append(h('p.empty', {}, 'No sessions match that.')); return; }
+    for (const s2 of rows){
+      list.append(h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ showSession(s2.id); } },
+        h('div.spread', {},
+          h('div', {},
+            h('div', { style:{ fontWeight:700 } }, dateLabel(s2.played_on)),
+            h('div.tiny.muted', {}, `${s2.house}${s2.title ? ' · ' + s2.title : ''}`),
+            h('div.row.wrapf', { style:{ marginTop:'8px' } },
+              s2.lines.filter(l => l.n).slice(0, 6).map(l => h('span.chip', {}, l.name, h('b.n', {}, l.series))))),
+          h('div', { style:{ textAlign:'right' } },
+            h('div.up', {}, 'best'),
+            h('div.big.n', { style:{ fontSize:'20px', fontWeight:750 } }, int(s2.bestGame)),
+            s2.winner ? h('div.tiny.gold', {}, 'Team ' + s2.winner.team + ' won') : null))));
+    }
+  }
+  draw();
+  box.append(card(bar), list);
+  box.append(glossary([
+    ['Session', 'One outing. Everything you bowled that night at that alley.'],
+    ['Best', 'The highest single game anybody bowled that night.'],
+    GLOSS.series, GLOSS.quick,
+  ]));
+  return box;
+}
+
+/* ======================================================================
+   TAB 5 — RECORDS: the trophy case
+   ====================================================================== */
+function subStats(games){
+  const scores = games.map(g => g.total_score);
+  const per = games.filter(g => g.entry_mode === 'pins' && g.rolls.length).map(g => B.gameStats(g.rolls));
+  const roll = B.mergeStats(per);
+  return {
+    games: games.length, scores, avg: B.mean(scores), sd: B.stdev(scores),
+    high: scores.length ? Math.max(...scores) : null, c200: scores.filter(v => v >= 200).length,
+    clean: roll.clean, roll,
+    sparePct: B.pct(roll.spares, roll.spareChances),
+    strikePct: B.pct(roll.strikes, roll.firstBalls),
+    firstBall: roll.firstBalls ? roll.firstBallPins / roll.firstBalls : null,
+    tenthAvg: roll.tenthGames ? roll.tenthPins / roll.tenthGames : null,
+  };
+}
+/* Longest run of strikes inside one session, across game boundaries. */
+function sessionStreaks(){
+  const out = [];
+  for (const ses of D.sessions){
+    for (const line of ses.lines){
+      let run = 0, best = 0;
+      for (const g of line.games){
+        if (g.entry_mode !== 'pins') { run = 0; continue; }
+        for (const r of B.ordered(g.rolls)){
+          if (r.standing_before === B.FULL && B.cnt(r.knocked) === 10){ run++; best = Math.max(best, run); }
+          else if (r.standing_before === B.FULL) run = 0;
+        }
+      }
+      if (best) out.push({ id: line.id, name: line.name, best, session: ses });
+    }
+  }
+  return out.sort((a,b) => b.best - a.best);
+}
+function records(){
+  const R = {};
+  R.highGame = D.games.reduce((a,g) => !a || g.total_score > a.total_score ? g : a, null);
+  const withStats = [...D.stats.values()].filter(s2 => s2.games);
+  R.best3 = withStats.map(s2 => ({ s:s2, v:s2.best3 })).filter(x => x.v != null).sort((a,b) => b.v - a.v)[0] || null;
+  R.best4 = withStats.map(s2 => ({ s:s2, v:s2.best4 })).filter(x => x.v != null).sort((a,b) => b.v - a.v)[0] || null;
+  R.series = withStats.map(s2 => ({ s:s2, v:s2.highSeries })).filter(x => x.v != null).sort((a,b) => b.v - a.v)[0] || null;
+  let mostStrikes = null;
+  for (const g of D.games){
+    if (g.entry_mode !== 'pins' || !g.rolls.length) continue;
+    const gs = B.gameStats(g.rolls);
+    if (!mostStrikes || gs.strikes > mostStrikes.n) mostStrikes = { g, n: gs.strikes };
+  }
+  R.mostStrikes = mostStrikes;
+  R.streak = sessionStreaks()[0] || null;
+  R.games = withStats.slice().sort((a,b) => b.games - a.games)[0] || null;
+  R.c200 = withStats.slice().sort((a,b) => b.c200 - a.c200)[0] || null;
+  R.perfect = D.games.filter(g => g.total_score === 300).sort((a,b) => a.played_on.localeCompare(b.played_on))[0] || null;
+  let spare = null, improve = null;
+  for (const ses of D.sessions){
+    for (const line of ses.lines){
+      const pins = line.games.filter(g => g.entry_mode === 'pins' && g.rolls.length);
+      if (pins.length){
+        const m = B.mergeStats(pins.map(g => B.gameStats(g.rolls)));
+        if (m.spareChances >= 5){
+          const v = B.pct(m.spares, m.spareChances);
+          if (!spare || v > spare.v) spare = { v, line, ses };
+        }
+      }
+      if (line.games.length >= 2){
+        const d = line.games[line.games.length-1].total_score - line.games[0].total_score;
+        if (!improve || d > improve.d) improve = { d, line, ses };
+      }
+    }
+  }
+  R.spare = spare; R.improve = improve;
+  return R;
+}
+const AWARDS = [
+  ['The Machine',      'highest average',            s2 => s2.avg,        one,  'max'],
+  ['Mr. Consistent',   'smallest gap between games', s2 => s2.sd,         one,  'min'],
+  ['Boom or Bust',     'biggest gap between games',  s2 => s2.sd,         one,  'max'],
+  ['Spare Change',     'best spare conversion',      s2 => s2.sparePct,   pc,   'max'],
+  ['Pocket Watch',     'best first ball',            s2 => s2.firstBall,  one,  'max'],
+  ['Iron Lung',        'most games bowled',          s2 => s2.games,      int,  'max'],
+  ['Clutch',           'best 10th frame',            s2 => s2.tenthAvg,   one,  'max'],
+  ['Gutter Insurance', 'lowest average, with love',  s2 => s2.avg,        one,  'min'],
+];
+function tabRecords(){
+  const box = h('div', {});
+  const R = records();
+  const nameOf = x => x?.s?.name || x?.line?.name || '—';
+  box.append(sectionHead('The trophy case', 'Everything anybody has ever done here.'));
+  box.append(tiles([
+    tile('Highest game', R.highGame ? int(R.highGame.total_score) : '—',
+      R.highGame ? `${D.profile.get(R.highGame.profile_id)?.display_name} · ${shortDate(R.highGame.played_on)}` : ''),
+    tile('Best 3-game series', R.best3 ? int(R.best3.v) : '—', R.best3 ? nameOf(R.best3) : ''),
+    tile('Best 4-game series', R.best4 ? int(R.best4.v) : '—', R.best4 ? nameOf(R.best4) : ''),
+    tile('Best night', R.series ? int(R.series.v) : '—', R.series ? nameOf(R.series) : 'all games in one session'),
+  ]));
+  box.append(tiles([
+    tile('Most strikes in a game', R.mostStrikes ? int(R.mostStrikes.n) : '—',
+      R.mostStrikes ? D.profile.get(R.mostStrikes.g.profile_id)?.display_name : ''),
+    tile('Longest strike streak', R.streak ? int(R.streak.best) : '—',
+      R.streak ? `${R.streak.name} — ${streakName(R.streak.best)}` : ''),
+    tile('Best spare night', R.spare ? pc(R.spare.v) : '—',
+      R.spare ? `${R.spare.line.name} · ${shortDate(R.spare.ses.played_on)}` : ''),
+    tile('Most games bowled', R.games ? int(R.games.games) : '—', R.games ? R.games.name : ''),
+  ]));
+  box.append(tiles([
+    tile('Biggest jump in a night', R.improve ? (R.improve.d > 0 ? '+' : '') + int(R.improve.d) : '—',
+      R.improve ? `${R.improve.line.name} · first to last game` : ''),
+    tile('Most 200s', R.c200 ? int(R.c200.c200) : '—', R.c200 ? R.c200.name : ''),
+    tile('Perfect games', R.perfect ? '1' : '0',
+      R.perfect ? `${D.profile.get(R.perfect.profile_id)?.display_name} · ${shortDate(R.perfect.played_on)}` : 'still waiting'),
+    tile('Games on record', int(D.games.length), `${D.sessions.length} sessions`),
+  ]));
+
+  const sorted = [...D.games].sort((a,b) => b.total_score - a.total_score);
+  box.append(sectionHead('The ten best games ever'));
+  box.append(h('div.card.pad0', {}, gameTable(sorted.slice(0, 10))));
+  box.append(sectionHead('And the ten worst', 'Everyone has a night like this.'));
+  box.append(h('div.card.pad0', {}, gameTable(sorted.slice(-10).reverse())));
+
+  const years = [...new Set(D.games.map(g => yearOf(g.played_on)))].sort((a,b) => b - a);
+  box.append(sectionHead('Awards', 'One set per calendar year. Four games in the year to be eligible.'));
+  if (!years.length) box.append(h('p.empty', {}, 'No seasons on record yet.'));
+  for (const y of years){
+    const perPerson = [];
+    for (const st of D.stats.values()){
+      const gs = st.gameList.filter(g => yearOf(g.played_on) === y);
+      if (gs.length < 4) continue;
+      perPerson.push({ name: st.name, id: st.id, profile: st.profile, ...subStats(gs) });
+    }
+    const wrapEl = h('div.card', {}, h('div.up', {}, y), h('div', { style:{ marginTop:'8px' } }));
+    const inner = wrapEl.lastChild;
+    if (perPerson.length < 2){ inner.append(h('p.tiny.muted', {}, 'Not enough games in this year yet.')); }
+    else for (const [title, blurb, pick, fmt, dir] of AWARDS){
+      const eligible = perPerson.filter(p => pick(p) != null);
+      if (!eligible.length) continue;
+      const win = eligible.slice().sort((a,b) => dir === 'max' ? pick(b) - pick(a) : pick(a) - pick(b))[0];
+      inner.append(h('button.feed.tap', { style:{ width:'100%' }, onclick(){ showBowler(win.id); } },
+        avatar(win.profile),
+        h('div', {}, h('div.small', {}, h('b', {}, title), ' — ', win.name),
+          h('div.tiny.muted', {}, blurb)),
+        h('div.when.n', { style:{ color:'var(--ink)' } }, fmt(pick(win)))));
+    }
+    box.append(wrapEl);
+  }
+  box.append(glossary([
+    ['Series', 'Games from one session added together. The 3-game and 4-game records are the best run of consecutive games inside a single night.'],
+    ['Turkey, four-bagger, six-pack', 'Three strikes in a row is a turkey. Four is a four-bagger, five a five-bagger, six a six-pack. Twelve is a perfect game.'],
+    GLOSS.sd, GLOSS.spare, GLOSS.firstball, GLOSS.tenth, GLOSS.c200, GLOSS.quick,
+    ['Gutter Insurance', 'The lowest average of the year. It is awarded with affection and it is not optional.'],
+  ]));
+  return box;
+}
+
+/* ======================================================================
+   TAB 6 — TEAMS
+   ====================================================================== */
+function tabTeams(){
+  const box = h('div', {});
+  const pairs = D.pairs.filter(p => p.sessions >= 3);
+  box.append(sectionHead('Who you bowl well with',
+    'We never bowl the same line-up twice, so there is no rivalry grid. This is what happens when two people end up on the same team. Three sessions together to appear.'));
+  if (!pairs.length){
+    box.append(h('p.empty', {}, 'No pair has bowled three sessions on the same team yet.'));
+  } else {
+    box.append(tiles([
+      tile('Best pairing', `${pairs[0].nameA} + ${pairs[0].nameB}`,
+        `${(pairs[0].delta >= 0 ? '+' : '') + one(pairs[0].delta)} vs their usual`),
+      tile('Worst pairing', `${pairs[pairs.length-1].nameA} + ${pairs[pairs.length-1].nameB}`,
+        `${one(pairs[pairs.length-1].delta)} vs their usual`),
+    ], 'two'));
+    box.append(card(divergingBars(pairs.map(p => ({
+      label: `${p.nameA}+${p.nameB}`, value: p.delta,
+      tipText: `${p.nameA} + ${p.nameB}: ${one(p.together)} together vs ${one(p.baseline)} apart, ${p.sessions} sessions`,
+    })))));
+    box.append(h('div.card.pad0', {}, sortTable({
+      initial:'delta', dir:-1,
+      cols:[
+        { key:'pair', label:'Pair', text:true, value:p => `${p.nameA} + ${p.nameB}` },
+        { key:'sessions', label:'Together', value:p => p.sessions },
+        { key:'together', label:'Combined avg', value:p => p.together, fmt:one },
+        { key:'baseline', label:'Their usual', value:p => p.baseline, fmt:one },
+        { key:'delta', label:'Difference', value:p => p.delta,
+          cell:p => h('span.n', { cls: p.delta >= 0 ? 'good' : 'bad' }, (p.delta >= 0 ? '+' : '') + one(p.delta)) },
+        { key:'win', label:'Win %', value:p => p.winPct, fmt:pc },
+      ], rows: pairs })));
+  }
+
+  box.append(sectionHead('Career team record', 'Across every rotating line-up.'));
+  const recs = [...D.stats.values()].filter(s2 => s2.games).map(s2 => ({ st:s2, ...teamRecord(s2.id) }))
+    .filter(r => r.played > 0 || r.mvp > 0);
+  box.append(h('div.card.pad0', {}, sortTable({
+    initial:'pct', dir:-1, onRow:r => showBowler(r.st.id),
+    empty:'Nobody has bowled a session with teams yet.',
+    cols:[
+      { key:'name', label:'Bowler', text:true, value:r => r.st.name },
+      { key:'played', label:'Sessions', value:r => r.played },
+      { key:'won', label:'Won', value:r => r.won },
+      { key:'pct', label:'Win %', value:r => r.winPct, fmt:pc },
+      { key:'mvp', label:'MVP', value:r => r.mvp },
+      { key:'most', label:'Most with', text:true, value:r => r.most?.name || '—' },
+      { key:'never', label:'Never won with', text:true, value:r => r.never?.name || '—' },
+    ], rows: recs })));
+
+  box.append(sectionHead('Team results', 'Every session that had teams.'));
+  const contested = D.sessions.filter(s2 => s2.contested);
+  if (!contested.length) box.append(h('p.empty', {}, 'No sessions with teams yet.'));
+  for (const ses of contested){
+    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ showSession(ses.id); } },
+      h('div.spread', {}, h('div', { style:{ fontWeight:650 } }, dateLabel(ses.played_on)),
+        h('span.chip', {}, ses.house)),
+      h('div', { style:{ marginTop:'8px' } }, barRows(ses.teams.map(t => ({
+        label: `Team ${t.team}`, value: t.total, text: int(t.total),
+        color: ses.winner.team === t.team ? 'g' : '',
+        tipText: t.members.map(m => `${m.name} ${m.series}`).join(' · '),
+      })))),
+      h('div.tiny.muted', { style:{ marginTop:'6px' } },
+        ses.teams.map(t => `${t.team}: ${t.members.map(m => m.name).join(', ')}`).join('  ·  '))));
+  }
+
+  box.append(sectionHead('Session MVPs', 'Highest series of the night.'));
+  const mvps = new Map();
+  for (const ses of D.sessions) if (ses.mvp && ses.mvp.n) mvps.set(ses.mvp.id, (mvps.get(ses.mvp.id) || 0) + 1);
+  box.append(card(mvps.size
+    ? barRows([...mvps.entries()].sort((a,b) => b[1] - a[1]).map(([id, n]) => ({
+        label: D.stats.get(id)?.name || '?', value: n, text: String(n), color:'gd' })))
+    : h('p.empty', {}, 'No sessions yet.')));
+
+  box.append(glossary([
+    ['Combined average', 'When these two are on the same team, every game either of them bowled that night, averaged.'],
+    ['Their usual', 'The average of their two all-time averages — what you would expect from them normally.'],
+    ['Difference', 'Combined average minus their usual. Green means the pair bowls better together than apart. It is not proof of anything, but it is fun.'],
+    ['Win %', 'Sessions where your team had the most pins, out of sessions where teams were picked at all.'],
+    ['MVP', 'Highest series in a session. One per night.'],
+    GLOSS.series,
+  ]));
+  return box;
+}
+
+/* ======================================================================
+   TAB 7 — ME
+   ====================================================================== */
+function tabMe(){
+  const box = h('div', {});
+  if (!state.user){
+    box.append(sectionHead('You', 'Sign in to log scores and manage your profile.'));
+    box.append(authCard());
+    return box;
+  }
+  const st = D.stats.get(state.user.id);
+  box.append(sectionHead('Your profile'));
+  box.append(profileSetup());
+
+  if (st && st.games){
+    box.append(tiles([
+      tile('Average', one(st.avg), `${st.games} games`),
+      tile('High game', int(st.high), ''),
+      tile('Handicap', int(st.handicap), ''),
+      tile('MVP nights', int(teamRecord(st.id).mvp), ''),
+    ]));
+    box.append(h('button.btn.wide', { onclick(){ showBowler(st.id); } }, 'See my full profile'));
+  }
+
+  box.append(sectionHead('Every game you have bowled', 'Tap one to edit or delete it.'));
+  box.append(h('div.card.pad0', {}, gameTable((D.gamesByProfile.get(state.user.id) || []).slice().reverse())));
+
+  const loggedForOthers = D.games.filter(g => g.logged_by === state.user.id && g.profile_id !== state.user.id);
+  if (loggedForOthers.length){
+    box.append(sectionHead('Games you logged for other people'));
+    box.append(h('div.card.pad0', {}, gameTable(loggedForOthers.slice().reverse())));
+  }
+
+  box.append(sectionHead('Account'));
+  const pw = h('input', { type:'password', placeholder:'new password', autocomplete:'new-password' });
+  const msg = h('div.err', {});
+  box.append(card(
+    h('label.f', {}, h('span', {}, 'Change password'), pw), msg,
+    h('button.btn.wide', { style:{ marginTop:'10px' }, async onclick(){
+      msg.className = 'err'; msg.textContent = '';
+      if (pw.value.length < 6){ msg.textContent = 'Six characters or more.'; return; }
+      try { await db.changePassword(pw.value); msg.className = 'ok'; msg.textContent = 'Changed.'; pw.value = ''; }
+      catch (err){ msg.textContent = err.message || String(err); }
+    } }, 'Save new password'),
+    h('button.btn.wide.danger', { style:{ marginTop:'8px' }, async onclick(){
+      await db.signOut(); await boot(true); toast('Signed out'); } }, 'Sign out')));
+
+  box.append(glossary([GLOSS.hcap, GLOSS.quick,
+    ['Editing', 'You can change or delete any game you bowled or any game you logged for someone else. The original is kept and shown in the history — that is the deal.'],
+  ]));
+  return box;
+}
+
+/* ======================================================================
+   ROUTER + BOOT
+   ====================================================================== */
+const TABS = [
+  ['home',     'Home',     tabHome],
+  ['log',      'Log',      tabLog],
+  ['bowlers',  'Bowlers',  tabBowlers],
+  ['sessions', 'Sessions', tabSessions],
+  ['records',  'Records',  tabRecords],
+  ['teams',    'Teams',    tabTeams],
+  ['me',       'Me',       tabMe],
+];
+let current = 'home';
+function go(id){
+  current = id;
+  if (location.hash.slice(1) !== id) history.replaceState(null, '', '#' + id);
+  render();
+  window.scrollTo({ top: 0 });
+}
+function render(){
+  const strip = clear($('#tabs'));
+  for (const [id, label] of TABS){
+    strip.append(h('button.tab', { role:'tab', 'aria-selected': String(id === current),
+      onclick(){ go(id); } }, label));
+  }
+  const build = (TABS.find(t => t[0] === current) || TABS[0])[2];
+  const panel = $('#panel');
+  const next = h('div', {});           // built detached, then swapped in
+  try { next.append(build()); }
+  catch (err){
+    console.error(err);
+    next.append(h('div.card', {}, h('h2', {}, 'Something broke'), h('p.small.muted', {}, String(err && err.message || err))));
+  }
+  panel.replaceChildren(next);
+  const cta = clear($('#cta-root'));
+  if (state.user && current !== 'log' && current !== 'home' && profileComplete(state.me))
+    cta.append(h('div.sticky-cta', {}, h('button.btn.pri.big', { onclick(){ go('log'); } }, '＋  Log a session')));
+}
+async function boot(reload){
+  if (!db){
+    try { db = STUB || !CONFIGURED ? stubDB() : await liveDB(); }
+    catch (err){ db = stubDB(); state.error = err; }
+    if (db.onChange) db.onChange(async user => { state.user = user; await load(); render(); });
+  }
+  state.user = await db.init();
+  if (STUB && window.__STUB_USER) state.user = window.__STUB_USER;
+  await load();
+  const hash = location.hash.slice(1);
+  if (!reload && TABS.some(t => t[0] === hash)) current = hash;
+  state.ready = true;
+  render();
+  document.body.dataset.ready = '1';
+}
+window.addEventListener('hashchange', () => {
+  const hash = location.hash.slice(1);
+  if (TABS.some(t => t[0] === hash) && hash !== current) go(hash);
+});
+window.APP = { state, D, go, boot, render, B };   // handy for the test harness
+await boot();
+</script>
+</body>
+</html>
