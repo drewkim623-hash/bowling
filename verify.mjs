@@ -780,6 +780,52 @@ async function browserTests(){
      sheetTxt.split(/session mvp/i)[1]?.slice(0, 80));
   await page.locator('.sheet .closebtn').first().click();
 
+  section('Reading a photo');
+  await page.locator('#tabs .tab', { hasText:'Tonight' }).click();
+  ok('with no reader set up, the site does not offer one',
+     await page.locator('button', { hasText:'Read it off a photo' }).count() === 0);
+  await page.evaluate(() => {
+    window.__PARSE_STUB = {
+      mode:'money', confident:true, note:'',
+      people:[
+        { name:'Drew',   values:[5, -2.5] },
+        { name:'natalie', values:[-5, 2.5] },
+        { name:'Somebody Else', values:[1] },
+      ],
+    };
+  });
+  await page.locator('.person', { hasText:'Nat' }).first().click();
+  await page.locator('button.btn.pri', { hasText:'Start keeping the book' }).click();
+  await page.waitForSelector('#panel .gamecard .led');
+  ok('with a reader set up, the button appears',
+     await page.locator('button', { hasText:'Read it off a photo' }).count() === 1);
+  await page.locator('button', { hasText:'Read it off a photo' }).click();
+  await page.waitForSelector('.sheet .inner');
+  await page.locator('.sheet input[type=file]').setInputFiles({
+    name:'notes.jpg', mimeType:'image/jpeg', buffer: Buffer.from('not really a jpeg'),
+  });
+  await page.waitForSelector('.sheet select');
+  const cards = await page.locator('.sheet .card').count();
+  ok('every person it read gets a row to check', cards >= 3, String(cards));
+  const picked = await page.locator('.sheet select').evaluateAll(ns => ns.map(n => n.selectedOptions[0].textContent));
+  ok('an exact name is matched', picked[0] === 'Drew', JSON.stringify(picked));
+  ok('and a longer version of a name is matched too', picked[1] === 'Nat', JSON.stringify(picked));
+  ok('somebody it does not recognise is left for you to decide', picked[2] === '— skip —', JSON.stringify(picked));
+  await page.locator('.sheet .card').nth(0).locator('input[type=number]').first().fill('7');
+  await page.locator('.sheet button', { hasText:'Use these numbers' }).click();
+  await page.waitForSelector('.sheet', { state:'detached' });
+  const after = await page.locator('.moneystrip').innerText();
+  ok('the numbers land in the book, with your correction', /\+\$4\.50/.test(after), after);
+  ok('and the other person too', /−\$2\.50/.test(after), after);
+  eq('two games came out of one photo', await page.locator('#panel .gamecard').count(), 2);
+  ok('nothing was saved that you did not confirm',
+     await page.evaluate(() => {
+       const sid = localStorage.getItem('bowl.money.night');
+       return !window.APP.state.money.some(m => m.session_id === sid && m.amount_cents === 100);
+     }));
+  await page.evaluate(() => { delete window.__PARSE_STUB; });
+  await page.locator('button.btn.sm', { hasText:'Done' }).click();
+
   section('Phone manners');
   await page.locator('#tabs .tab', { hasText:/^Me$/ }).click();
   const zoom = await page.evaluate(() => [...document.querySelectorAll('#panel input, #panel select')]

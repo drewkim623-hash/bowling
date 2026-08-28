@@ -198,6 +198,66 @@ bottom that defines each stat in one plain sentence. Nobody has to know what a h
 
 ---
 
+## Reading a photo (optional)
+
+The site can read a photo of the monitor above the lane, or of the notes page you
+keep the money on, and fill the numbers in for you to check. It is off until you set
+it up, and the button does not appear until you do.
+
+It needs an API key, and a key cannot live in `index.html` — that file is public and
+anything in it is public with it. So the key lives in a small function inside your own
+Supabase project, and the page asks that function.
+
+### 1. Get a key
+
+Go to **console.anthropic.com** → **API keys** → **Create key**. Copy it. It starts
+`sk-ant-`. This is the secret kind — it never goes in `index.html` and never gets
+committed to GitHub.
+
+### 2. Put the function in Supabase
+
+The easy way, in the dashboard:
+
+1. Supabase → **Edge Functions** → **Deploy a new function** → **Via editor**.
+2. Name it exactly `parse-photo`.
+3. Open `supabase/functions/parse-photo/index.ts` from this folder, copy all of it,
+   paste it in, and deploy.
+
+Or from a terminal, if you have the Supabase CLI:
+
+```bash
+supabase link --project-ref YOUR-PROJECT-REF
+supabase functions deploy parse-photo
+```
+
+### 3. Give it the key
+
+Supabase → **Edge Functions** → **parse-photo** → **Secrets** → add:
+
+```
+ANTHROPIC_API_KEY = sk-ant-...
+```
+
+(or `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...` from the terminal)
+
+That is it. Reload the site and **📷 Read it off a photo** appears in a night's book,
+and **📷 Read the monitor** on a session you are typing up.
+
+### What to expect
+
+It reads the names and the numbers and shows you **a draft you correct**, then you press
+**Use these numbers**. Nothing is ever saved from a photo without you confirming it — a
+bad read that saved itself would quietly poison the record book, and edits here are
+permanent history.
+
+It is good, not perfect. Photos taken at an angle, with glare on the screen, or with half
+the sheet out of frame will produce nonsense in places. That is what the review screen is
+for. If it is unsure it tells you so at the top.
+
+Each photo costs a couple of cents against your Anthropic account. A season of Thursdays
+is well under a dollar. The model is named at the top of `index.ts` if you ever want to
+change it.
+
 ## Checking that it still works
 
 There is a test harness. It runs the real page in a real browser and checks the scoring
@@ -223,6 +283,7 @@ is broken.
 | `index.html` | The entire site — markup, styling and code. The only file the browser needs. |
 | `schema.sql` | The database. Paste into Supabase once. |
 | `verify.mjs` | The test harness. Never runs in the live site. |
+| `supabase/functions/parse-photo/` | Optional. The photo reader — holds your API key, in your Supabase project. |
 | `icon.png` | The home screen icon. |
 | `manifest.json` | Lets phones install it like an app. |
 | `README.md` | This. |

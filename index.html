@@ -2358,6 +2358,35 @@ function sessionScores(){
           `Log game ${games.length + 1}`)));
     box.append(row);
   }
+  if (canReadPhotos()){
+    box.append(h('button.btn.wide', { style:{ marginTop:'10px' }, onclick(){
+      photoSheet({
+        mode:'scores',
+        people: ses.lines.map(l => ({ key:l.id, name:l.name })),
+        async onApply(rows){
+          for (const r of rows){
+            const line = ses.lines.find(l => l.id === r.match.key);
+            const already = line ? line.games.length : 0;
+            for (let i = 0; i < r.values.length; i++){
+              const score = Math.round(r.values[i]);
+              if (!B.isPossibleScore(score)) continue;
+              const existing = line && line.games.find(g => g.game_no === i + 1);
+              const g = {
+                id: existing ? existing.id : uid(), session_id: ses.id, profile_id: r.match.key,
+                game_no: i + 1, total_score: score, entry_mode:'quick', logged_by: state.user.id,
+                created_at: existing ? existing.created_at : new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+              await db.saveGame(g, [], existing || null);
+            }
+          }
+          await load();
+          toast('Read in — tap any score to fix it');
+          render();
+        },
+      });
+    } }, '📷  Read the monitor'));
+  }
   box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
     'Tap a score to fix it. Every edit is written down and shown next to the game.'));
   return box;
@@ -3426,6 +3455,29 @@ function moneyLedger(ses){
   drawTotals();
   box.append(strip);
 
+  if (canReadPhotos()){
+    box.append(h('button.btn.wide', { style:{ margin:'4px 0 10px' }, onclick(){
+      photoSheet({
+        mode:'money',
+        people: keys.map(k => ({ key:k, name: personName(k) })),
+        async onApply(rows){
+          const touchedGames = new Set();
+          for (const r of rows){
+            r.values.forEach((v, i) => {
+              const n = i + 1;
+              if (n > games){ games = n; localStorage.setItem(gameCountKey(ses.id), games); }
+              draft.set(n + '|' + r.match.key, Math.round(v * 100));
+              touchedGames.add(n);
+            });
+          }
+          for (const n of touchedGames) await save(n);
+          drawTotals(); drawGames();
+          toast('Read in — check it over');
+        },
+      });
+    } }, '📷  Read it off a photo'));
+  }
+
   const gname = h('input', { type:'text', placeholder:'someone else’s name' });
   box.append(h('div.row', { style:{ margin:'10px 0' } }, gname,
     h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
@@ -3507,6 +3559,113 @@ async function mergeGuestInto(guestId, profileId){
   if (kill.length) await db.deleteMoneyRows(kill);
   await db.deleteGuest(guestId);
   await load();
+}
+
+/* ======================================================================
+   READING A PHOTO
+   The picture goes to a Supabase function that holds the API key; what comes
+   back is a draft you look at and correct. Nothing is saved until you say so.
+   ====================================================================== */
+const canReadPhotos = () => !!(window.__PARSE_STUB || (db && db.kind === 'live' && CONFIGURED));
+
+async function readPhoto(mode, file, people){
+  if (window.__PARSE_STUB) return window.__PARSE_STUB;
+  const data = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1] || '');
+    r.onerror = () => rej(new Error('Could not open that file.'));
+    r.readAsDataURL(file);
+  });
+  let token = SUPA.anonKey;
+  try { const { data: sess } = await db.sb.auth.getSession(); token = sess?.session?.access_token || token; } catch {}
+  const res = await fetch(`${SUPA.url}/functions/v1/parse-photo`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', apikey: SUPA.anonKey, Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ mode, media_type: file.type || 'image/jpeg', data, people: people.map(p => p.name) }),
+  });
+  if (res.status === 404) throw new Error('The photo reader is not set up on this site yet — the README says how, it takes about ten minutes.');
+  let out = {};
+  try { out = await res.json(); } catch {}
+  if (!res.ok || out.error) throw new Error(out.error || `The reader answered ${res.status}.`);
+  return out;
+}
+/* Match what is written on the page to somebody we know about. */
+function matchPerson(written, people){
+  const n = String(written || '').trim().toLowerCase();
+  if (!n) return null;
+  return people.find(p => p.name.toLowerCase() === n)
+      || people.find(p => p.name.toLowerCase().startsWith(n) || n.startsWith(p.name.toLowerCase()))
+      || people.find(p => p.name[0].toLowerCase() === n[0] && n.length <= 3)
+      || null;
+}
+
+function photoSheet({ mode, people, onApply, title }){
+  openSheet(title || (mode === 'money' ? 'Read the notes' : 'Read the monitor'), body => {
+    const file = h('input', { type:'file', accept:'image/*', capture:'environment', style:{ display:'none' } });
+    const preview = h('div', {});
+    const out = h('div', {});
+    const pick = h('button.btn.pri.wide.big', { onclick(){ file.click(); } }, '📷  Take or choose a photo');
+
+    body.append(h('p.small.ink2', { style:{ margin:'14px 0' } }, mode === 'money'
+      ? 'A photo of the notes page you keep the money on. It reads the names and the numbers and shows you what it thinks before anything is saved.'
+      : 'A photo of the monitor above the lane. It reads each bowler’s final total for each game and shows you what it thinks before anything is saved.'),
+      pick, file, preview, out);
+
+    file.onchange = async () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      clear(out);
+      clear(preview);
+      preview.append(h('img', { src: URL.createObjectURL(f), alt:'',
+        style:{ width:'100%', borderRadius:'14px', margin:'14px 0', border:'1px solid var(--ring)' } }));
+      out.append(h('p.small.muted', {}, 'Reading it…'));
+      try {
+        const res = await readPhoto(mode, f, people);
+        clear(out);
+        const rows = (res.people || []).map(p => ({
+          written: p.name, match: matchPerson(p.name, people), values: p.values || [],
+        }));
+        if (!rows.length){
+          out.append(h('p.empty', {}, res.note || 'Nothing readable in that one. Try again straight on, with the whole thing in frame.'));
+          return;
+        }
+        if (!res.confident || res.note)
+          out.append(h('div.card', { style:{ borderColor:'rgba(201,133,0,.5)' } },
+            h('div.up.gold', {}, res.confident ? 'Worth a look' : 'Not sure about this one'),
+            h('p.small.ink2', { style:{ marginTop:'4px' } }, res.note || 'Some of these were hard to read. Check them.')));
+
+        out.append(sectionHead('What it read', 'Change anything that is wrong, then use it.'));
+        for (const r of rows){
+          const sel = h('select', {}, h('option', { value:'' }, '— skip —'),
+            people.map(p => h('option', { value:p.key, selected: r.match && r.match.key === p.key }, p.name)));
+          sel.onchange = () => { r.match = people.find(p => p.key === sel.value) || null; };
+          const boxes = h('div.row.wrapf', { style:{ marginTop:'8px' } });
+          r.values.forEach((v, i) => {
+            const inp = h('input.n', { type:'number', step: mode === 'money' ? '0.5' : '1', value:v,
+              style:{ width:'84px' }, onchange(e){ r.values[i] = Number(e.target.value); } });
+            boxes.append(inp);
+          });
+          out.append(h('div.card', {},
+            h('div.spread', {}, h('div', { style:{ fontWeight:650 } }, r.written),
+              h('span.tiny.muted', {}, `${r.values.length} number${r.values.length === 1 ? '' : 's'}`)),
+            h('div', { style:{ marginTop:'8px' } }, sel), boxes));
+        }
+        out.append(h('button.btn.pri.wide.big', { style:{ marginTop:'14px' }, async onclick(){
+          const use = rows.filter(r => r.match && r.values.length);
+          if (!use.length){ toast('Nothing to use — match at least one name.'); return; }
+          try { await onApply(use); closeSheet(); }
+          catch (err){ toast(saveError(err)); }
+        } }, 'Use these numbers'));
+        out.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
+          'It reads a photo well but not perfectly. Whatever you confirm here is what gets saved.'));
+      } catch (err){
+        clear(out);
+        out.append(h('div.card', { style:{ borderColor:'rgba(230,103,103,.5)' } },
+          h('div.up', { style:{ color:'var(--red)' } }, 'Could not read it'),
+          h('p.small.ink2', { style:{ marginTop:'4px' } }, err.message || String(err))));
+      }
+    };
+  });
 }
 
 /* ---- tonight: the book you are keeping right now ---- */
