@@ -660,7 +660,7 @@ async function browserTests(){
      await page.evaluate(() => window.APP.state.money.length) < before);
   ok('and the running total goes back', /\+\$15/.test(await page.locator('.moneystrip').innerText()));
 
-  await page.locator('.whosin .chip', { hasText:'Tony' }).locator('button.rm').click();
+  await page.locator('.moneystrip .chip', { hasText:'Tony' }).locator('button.rm').click();
   await page.waitForTimeout(250);
   ok('somebody can be taken out of a night',
      !/Tony/.test(await page.locator('.moneystrip').innerText()),

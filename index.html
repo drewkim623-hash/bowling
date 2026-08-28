@@ -24,7 +24,7 @@
   --good:#0ca30c; --crit:#d03b3b; --mid:#383840;
   --plus:#3ad07f; --hold:#c98500;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
-  --r:14px; --rs:10px;
+  --r:18px; --rs:13px;
   --pad:max(16px,env(safe-area-inset-left));
 }
 *,*::before,*::after{box-sizing:border-box}
@@ -45,7 +45,7 @@ h1,h2,h3,p,dl,dd,dt,figure{margin:0}
   padding:0 var(--pad) calc(130px + env(safe-area-inset-bottom))}
 .muted{color:var(--muted)}.ink2{color:var(--ink-2)}
 .small{font-size:12.5px}.tiny{font-size:11.5px}
-.up{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.up{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:650}
 .row{display:flex;gap:8px;align-items:center}
 .row.wrapf{flex-wrap:wrap}
 .spread{display:flex;gap:8px;align-items:center;justify-content:space-between}
@@ -68,27 +68,27 @@ h1,h2,h3,p,dl,dd,dt,figure{margin:0}
   background:rgba(11,11,15,.88);backdrop-filter:saturate(140%) blur(10px);border-bottom:1px solid var(--ring)}
 .tabs .strip2{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
 .tabs .strip2::-webkit-scrollbar{display:none}
-.tab{white-space:nowrap;padding:10px 15px;min-height:42px;display:flex;align-items:center;
+.tab{white-space:nowrap;padding:11px 16px;min-height:44px;display:flex;align-items:center;
   border-radius:999px;background:var(--raised);
   border:1px solid var(--ring);color:var(--ink-2);font-size:13.5px;font-weight:650}
 .tab[aria-selected="true"]{background:var(--blue);border-color:var(--blue);color:#fff}
 
 /* ---- cards ---- */
-.card{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:14px;margin:12px 0}
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:16px;margin:12px 0}
 .card.pad0{padding:0;overflow:hidden}
 .tap{transition:transform .12s ease,border-color .12s ease,background .12s ease}
 .tap:hover{transform:translateY(-2px);border-color:rgba(57,135,229,.55);background:var(--hover)}
 .tap:active{transform:translateY(0)}
-.sec{margin-top:24px}
-.sec>h2{font-size:17px;letter-spacing:-.015em;font-weight:750}
-.sec>.sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.sec{margin-top:28px}
+.sec>h2{font-size:19px;letter-spacing:-.02em;font-weight:750}
+.sec>.sub{color:var(--muted);font-size:13px;margin-top:4px;line-height:1.5}
 
 /* ---- stat tiles ---- */
 .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:12px 0}
 @media(min-width:620px){.tiles{grid-template-columns:repeat(4,1fr)}}
 .tiles.two{grid-template-columns:repeat(2,1fr)}
-.tile{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:11px 12px}
-.tile .big{overflow-wrap:anywhere;font-size:25px;font-weight:750;margin-top:3px;letter-spacing:-.02em;line-height:1.1}
+.tile{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:13px 14px}
+.tile .big{overflow-wrap:anywhere;font-size:26px;font-weight:750;margin-top:5px;letter-spacing:-.022em;line-height:1.1}
 .tile .cap{font-size:11.5px;color:var(--muted);margin-top:3px;min-height:16px}
 
 /* ---- tables ---- */
@@ -106,14 +106,14 @@ tbody tr.tap:hover td:first-child{background:var(--hover)}
 .rank{color:var(--muted);width:1px;padding-right:0}
 
 /* ---- buttons ---- */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 15px;min-height:44px;
-  border-radius:var(--rs);background:var(--raised);border:1px solid var(--ring);font-weight:650;font-size:14px;
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 17px;min-height:48px;
+  border-radius:14px;background:var(--raised);border:1px solid var(--ring);font-weight:650;font-size:14.5px;
   text-align:center;transition:background .12s,border-color .12s}
 .btn:hover{background:var(--hover);border-color:rgba(57,135,229,.5)}
 .btn.pri{background:var(--blue);border-color:var(--blue);color:#fff}
 .btn.pri:hover{background:#4a92e8}
 .btn.wide{width:100%}
-.btn.big{padding:16px;font-size:16px}
+.btn.big{padding:17px;min-height:56px;font-size:16.5px;border-radius:16px}
 .btn.sm{padding:7px 11px;min-height:36px;font-size:12.5px;border-radius:8px}
 .btn[disabled]{opacity:.4;pointer-events:none}
 .btn.danger{color:var(--red);border-color:rgba(230,103,103,.4)}
@@ -121,8 +121,8 @@ tbody tr.tap:hover td:first-child{background:var(--hover)}
 .seg button{flex:1;padding:10px;min-height:42px;border-radius:999px;font-size:13px;font-weight:650;
   color:var(--ink-2);text-align:center}
 .seg button[aria-pressed="true"]{background:var(--blue);color:#fff}
-.chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
-  background:var(--raised);border:1px solid var(--ring);font-size:11.5px;color:var(--ink-2)}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:999px;white-space:nowrap;
+  background:var(--raised);border:1px solid var(--ring);font-size:12px;color:var(--ink-2)}
 .chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--muted);display:inline-block;flex:none}
 .dot.quick{background:var(--hold)}
@@ -139,7 +139,7 @@ input:focus,select:focus{border-color:var(--blue)}
 
 /* ---- people ---- */
 .people{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
-.person{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:10px;min-width:0}
+.person{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:12px;min-width:0}
 .person .row>div{min-width:0}
 .person .row>div>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av{width:34px;height:34px;border-radius:50%;background:var(--raised);border:1px solid var(--ring);
@@ -208,6 +208,11 @@ input:focus,select:focus{border-color:var(--blue)}
 .deckbtns .btn{padding:12px 4px;font-size:13px}
 
 /* ---- money ---- */
+.pill{display:inline-block;padding:3px 9px;border-radius:999px;font-weight:750;
+  white-space:nowrap;font-variant-numeric:tabular-nums}
+.pill.up{background:rgba(58,208,127,.16);color:var(--plus)}
+.pill.down{background:rgba(230,103,103,.15);color:var(--red)}
+.pill.flat{background:var(--mid);color:var(--muted)}
 .rm{width:30px;height:30px;flex:none;border-radius:8px;background:var(--raised);border:1px solid var(--ring);
   display:grid;place-items:center;color:var(--muted);font-size:14px;line-height:1}
 .rm:hover{color:var(--red);border-color:rgba(230,103,103,.5)}
@@ -217,11 +222,11 @@ input:focus,select:focus{border-color:var(--blue)}
 .payrow:last-child{border-bottom:0}
 .payrow b{font-weight:750}
 .arrow{color:var(--muted)}
-.led{display:grid;grid-template-columns:1fr auto auto;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid var(--grid)}
+.led{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--grid)}
 .led:last-child{border-bottom:0}
 .led .who{font-size:13.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .led .amt{width:92px}
-.led input{padding:9px 10px;text-align:right}
+.led input{padding:11px 12px;min-height:46px;text-align:right;border-radius:12px;font-weight:700}
 .up-amt{font-size:15px;font-weight:750}
 .teamcyc{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:30px;padding:0 8px;
   border-radius:8px;background:var(--mid);border:1px solid var(--ring);font-size:12px;font-weight:750;color:var(--ink-2)}
@@ -230,6 +235,9 @@ input:focus,select:focus{border-color:var(--blue)}
 .teamcyc[data-t="C"]{background:rgba(201,133,0,.26);border-color:rgba(201,133,0,.6);color:#e2b45c}
 .teamcyc[data-t="D"]{background:rgba(144,133,233,.26);border-color:rgba(144,133,233,.6);color:#c0b8f4}
 .moneystrip{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:8px 0}
+.moneystrip.stick{position:sticky;top:61px;z-index:30;margin:0 calc(-1*var(--pad)) 8px;
+  padding:9px var(--pad);background:rgba(11,11,15,.93);backdrop-filter:saturate(140%) blur(10px);
+  border-bottom:1px solid var(--ring)}
 .moneystrip::-webkit-scrollbar{display:none}
 .balwarn{font-size:11.5px;color:var(--hold);margin-top:8px}
 
@@ -293,7 +301,7 @@ body.focus .tabs{padding-top:calc(8px + env(safe-area-inset-top))}
 /* ---- rows become cards on a phone, tables on anything wider ---- */
 .rcards{display:flex;flex-direction:column;gap:8px}
 .rcard{display:block;width:100%;background:var(--surface);border:1px solid var(--ring);
-  border-radius:var(--r);padding:11px 12px}
+  border-radius:var(--r);padding:13px 14px}
 .rcard .rc-top{display:flex;align-items:center;gap:9px}
 .rcard .rc-title{font-weight:650;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rcard .rc-main{margin-left:auto;font-size:21px;font-weight:750;letter-spacing:-.02em;flex:none}
@@ -1472,12 +1480,29 @@ function card(...kids){ return h('div.card', {}, kids); }
 function sectionHead(title, sub){
   return h('div.sec', {}, h('h2', {}, title), sub ? h('p.sub', {}, sub) : null);
 }
+/* Two people whose ids differ by one character should not end up the same
+   colour, so the hash is spread around the wheel by the golden angle. */
+function hueOf(seed){
+  let n = 2166136261;
+  for (const c of String(seed || '?')){ n ^= c.charCodeAt(0); n = Math.imul(n, 16777619); }
+  return Math.abs(n % 997) * 137.508 % 360;
+}
 function avatar(p, big){
-  const a = h('div.av' + (big ? '.lg' : ''), {});
+  const seed = p ? (p.id || p.name || p.display_name) : '?';
+  const hue = hueOf(seed);
+  const a = h('div.av' + (big ? '.lg' : ''), { style:{
+    background: `hsl(${hue} 42% 20%)`, borderColor: `hsl(${hue} 40% 32%)`, color: `hsl(${hue} 70% 78%)` } });
   if (p && p.avatar_url) a.append(h('img', { src: p.avatar_url, alt: '' }));
-  else a.append(initials(p ? p.display_name : '?'));
+  else a.append(initials(p ? (p.display_name || p.name) : '?'));
   return a;
 }
+/* A name badge for guests, who have no profile row to hang a picture on. */
+function nameChip(name){
+  const hue = hueOf(name);
+  return h('div.av', { style:{ background:`hsl(${hue} 42% 20%)`, borderColor:`hsl(${hue} 40% 32%)`,
+    color:`hsl(${hue} 70% 78%)` } }, initials(name));
+}
+const moneyPill = c => h('span.pill' + (c > 0 ? '.up' : c < 0 ? '.down' : '.flat'), {}, money(c));
 /* Plain English, every section, no exceptions. */
 function glossary(entries){
   return h('details.gloss', {},
@@ -3116,7 +3141,7 @@ function moneyNightForm(){
       const on = chosen.has(p.key);
       people.append(h('button.person.tap', { style: on ? { borderColor:'var(--blue)' } : {},
         onclick(){ on ? chosen.delete(p.key) : chosen.add(p.key); drawPeople(); } },
-        h('div.row', {}, p.profile ? avatar(p.profile) : h('div.av', {}, initials(p.name)),
+        h('div.row', {}, p.profile ? avatar(p.profile) : nameChip(p.name),
           h('div', {}, h('div', { style:{ fontWeight:650, fontSize:'13px' } }, p.name),
             h('div.tiny', { cls: on ? 'good' : 'muted' }, on ? 'in' : (p.profile ? 'tap to add' : 'guest'))))));
     }
@@ -3181,13 +3206,24 @@ function moneyLedger(ses){
   const cell = (n, k) => draft.get(n + '|' + k) || 0;
   const totalFor = k => { let t = 0; for (let n = 1; n <= games; n++) t += cell(n, k); return t; };
 
-  const strip = h('div.moneystrip', {});
+  const strip = h('div.moneystrip.stick', {});
   let drawTotals = function(){
     clear(strip);
     for (const k of [...keys].sort((a,b) => totalFor(b) - totalFor(a))){
       const t = totalFor(k);
-      strip.append(h('span.chip', {}, personName(k), ' ',
-        h('b.up-amt', { cls: t > 0 ? 'good' : t < 0 ? 'bad' : 'muted' }, money(t))));
+      strip.append(h('span.chip', {}, personName(k), ' ', moneyPill(t),
+        h('button.rm', { style:{ width:'22px', height:'22px', fontSize:'12px', marginLeft:'2px' },
+          'aria-label': 'Remove ' + personName(k),
+          async onclick(e){
+            e.stopPropagation();
+            if (!confirm(`Take ${personName(k)} out of this night? Their lines for tonight go with them.`)) return;
+            try {
+              await removeFromNight(ses.id, k);
+              keys = keys.filter(x => x !== k);
+              for (let n = 1; n <= games; n++) draft.delete(n + '|' + k);
+              drawTotals(); drawGames();
+            } catch (err){ toast(saveError(err)); }
+          } }, '✕')));
     }
     const bal = keys.reduce((s, k) => s + totalFor(k), 0);
     if (bal !== 0) strip.append(h('span.chip', { style:{ borderColor:'rgba(201,133,0,.5)' } },
@@ -3302,28 +3338,6 @@ function moneyLedger(ses){
   drawTotals();
   box.append(strip);
 
-  /* who is in, and how to take somebody back out */
-  const inRow = h('div.whosin', {});
-  box.append(inRow);
-  function drawWhosIn(){
-    clear(inRow);
-    for (const k of keys){
-      inRow.append(h('span.chip', {}, personName(k),
-        h('button.rm', { style:{ width:'22px', height:'22px', fontSize:'12px' },
-          'aria-label': 'Remove ' + personName(k),
-          async onclick(e){
-            e.stopPropagation();
-            if (!confirm(`Take ${personName(k)} out of this night? Their lines for tonight go with them.`)) return;
-            try {
-              await removeFromNight(ses.id, k);
-              keys = keys.filter(x => x !== k);
-              for (let n = 1; n <= games; n++) draft.delete(n + '|' + k);
-              drawWhosIn(); drawTotals(); drawGames();
-            } catch (err){ toast(saveError(err)); }
-          } }, '✕')));
-    }
-  }
-
   const gname = h('input', { type:'text', placeholder:'someone else’s name' });
   box.append(h('div.row', { style:{ margin:'10px 0' } }, gname,
     h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
@@ -3336,7 +3350,7 @@ function moneyLedger(ses){
         if (!keys.includes(k)) keys.push(k);
         gname.value = '';
         await save(1);
-        drawWhosIn(); drawTotals(); drawGames();
+        drawTotals(); drawGames();
         toast(`${g.name} is in`);
       } catch (err){ toast(saveError(err)); }
     } }, 'Add somebody')));
@@ -3371,7 +3385,6 @@ function moneyLedger(ses){
 
   const _drawTotals = drawTotals;
   drawTotals = function(){ _drawTotals(); drawSquare(); };
-  drawWhosIn();
   drawTotals();
   box.append(square);
   box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
@@ -3478,11 +3491,10 @@ function tabMoney(){
     onRow: r => { if (!r.guest) showBowler(r.key.slice(2)); },
     cols:[
       { key:'name', label:'Person', text:true, value:r => r.name,
-        cell:r => h('div.row', {}, r.profile ? avatar(r.profile) : h('div.av', {}, initials(r.name)),
+        cell:r => h('div.row', {}, r.profile ? avatar(r.profile) : nameChip(r.name),
           h('span', { style:{ fontWeight:650 } }, r.name),
           r.guest ? h('span.tiny.muted', {}, 'guest') : null) },
-      { key:'net', label:'Net', value:r => r.net,
-        cell:r => h('span.n', { cls: r.net > 0 ? 'good' : r.net < 0 ? 'bad' : 'muted' }, money(r.net)) },
+      { key:'net', label:'Net', value:r => r.net, cell:r => moneyPill(r.net) },
       { key:'nights', label:'Nights', value:r => r.nights },
       { key:'best', label:'Best night', value:r => r.best, fmt:v => money(v) },
       { key:'worst', label:'Worst night', value:r => r.worst, fmt:v => money(v) },
@@ -3518,7 +3530,7 @@ function tabMoney(){
           } }, 'Rename')),
         h('div.row.wrapf', { style:{ marginTop:'8px' } },
           h('span.chip', {}, `${sum.nights} night${sum.nights === 1 ? '' : 's'}`),
-          h('span.chip', {}, h('b', { cls: sum.net > 0 ? 'good' : sum.net < 0 ? 'bad' : 'muted' }, money(sum.net)))),
+          h('span.chip', {}, moneyPill(sum.net))),
         h('div.row', { style:{ marginTop:'10px' } }, pick,
           h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
             if (!pick.value){ toast('Pick an account first.'); return; }
@@ -3557,8 +3569,7 @@ function tabMoney(){
         h('span.chip', {}, n.ses.house)),
       h('div.row.wrapf', { style:{ marginTop:'8px' } },
         [...net.entries()].sort((a,b) => b[1] - a[1]).map(([k, c]) =>
-          h('span.chip', {}, personName(k), ' ',
-            h('b', { cls: c > 0 ? 'good' : c < 0 ? 'bad' : 'muted' }, money(c)))))));
+          h('span.chip', {}, personName(k), ' ', moneyPill(c))))));
   }
   box.append(glossary(MONEY_GLOSS));
   return box;
