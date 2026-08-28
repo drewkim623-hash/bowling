@@ -114,7 +114,7 @@ tbody tr.tap:hover td:first-child{background:var(--hover)}
 .btn.pri:hover{background:#4a92e8}
 .btn.wide{width:100%}
 .btn.big{padding:17px;min-height:56px;font-size:16.5px;border-radius:16px}
-.btn.sm{padding:7px 11px;min-height:36px;font-size:12.5px;border-radius:8px}
+.btn.sm{padding:8px 12px;min-height:40px;font-size:12.5px;border-radius:8px}
 .btn[disabled]{opacity:.4;pointer-events:none}
 .btn.danger{color:var(--red);border-color:rgba(230,103,103,.4)}
 .seg{display:flex;background:var(--raised);border:1px solid var(--ring);border-radius:999px;padding:3px;gap:3px}
@@ -146,6 +146,8 @@ input:focus,select:focus{border-color:var(--blue)}
   display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--ink-2);overflow:hidden;flex:none}
 .av img{width:100%;height:100%;object-fit:cover}
 .av.lg{width:52px;height:52px;font-size:19px}
+.av.xl{width:76px;height:76px;font-size:26px;flex:none}
+.photo{display:flex;gap:14px;align-items:center;margin:14px 0 4px}
 
 /* ---- champion bar ---- */
 .champ{background:linear-gradient(100deg,rgba(201,133,0,.30),rgba(201,133,0,.05));
@@ -796,12 +798,41 @@ function settleUp(nets){
   return out;
 }
 
+/* ---------------------------------------------------------------- ranking */
+/* A power ranking that is about how you bowl, not how generously you are
+   handicapped. Every part is scaled 0..1 between a floor and a ceiling drawn
+   from what a casual league actually looks like; a part nobody has data for
+   drops out and the rest share its weight. */
+function band(v, lo, hi){
+  if (v == null || Number.isNaN(v)) return null;
+  return Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+}
+const POWER_PARTS = [
+  ['Average',     45, s2 => band(s2.avg,        110, 215), 'how many pins you knock down, the headline'],
+  ['First ball',  15, s2 => band(s2.firstBall,  5.5, 9.4), 'how well you throw it before the spare matters'],
+  ['Spares',      15, s2 => band(s2.sparePct,    20,  70), 'cleaning up what you leave'],
+  ['Strikes',     10, s2 => band(s2.strikePct,    8,  60), 'how often the whole rack goes'],
+  ['Consistency', 10, s2 => band(s2.sd,          45,  15), 'how close your games are to each other'],
+  ['Form',         5, s2 => band(s2.form,       -15,  15), 'last ten games against your own average'],
+];
+function powerScore(st){
+  const parts = POWER_PARTS
+    .map(([label, weight, get, blurb]) => ({ label, weight, blurb, value: get(st) }))
+    .filter(p => p.value != null);
+  const total = parts.reduce((s2, p) => s2 + p.weight, 0);
+  if (!total) return { score: null, parts: [] };
+  return {
+    score: parts.reduce((s2, p) => s2 + p.weight * p.value, 0) / total * 100,
+    parts: parts.map(p => ({ ...p, share: p.weight / total })),
+  };
+}
+
 window.BOWL = {
   FULL, bit, cnt, pinsOf, maskOf, ROW, XP, aheadOf,
   ordered, counts, fell, leaveMask, scoreCounts, scoreRolls, deckState, validateRolls,
   possibleScores, isPossibleScore, witness,
   isSplit, leaveName, gameStats, mergeStats,
-  pct, mean, stdev, handicap, commonLeaves, settle, settleUp,
+  pct, mean, stdev, handicap, commonLeaves, settle, settleUp, band, powerScore, POWER_PARTS,
 };
 </script>
 
@@ -1409,9 +1440,26 @@ function sessionSummary(ses){
   }
   const teamList = [...teams.values()].sort((a,b) => b.total - a.total);
   const contested = teamList.length > 1 && teamList.every(t => t.members.some(m => m.n > 0));
-  const mvp = lines.find(l => l.n > 0) || null;
+
+  /* MVP is the best mix of how you bowled and what you took off everybody.
+     Sixty per cent the bowling, forty per cent the money. On a night with no
+     money on it, it is simply the best average. */
+  const cash = D.moneyBySession.get(ses.id) || [];
+  const netBy = new Map();
+  for (const m of cash) if (m.profile_id) netBy.set(m.profile_id, (netBy.get(m.profile_id) || 0) + m.amount_cents);
+  const playing = lines.filter(l => l.n > 0);
+  const avgOf = l => l.series / l.n;
+  const bestAvg = playing.length ? Math.max(...playing.map(avgOf)) : 0;
+  const nets = playing.map(l => netBy.get(l.id) || 0);
+  const lo = nets.length ? Math.min(...nets) : 0, hi = nets.length ? Math.max(...nets) : 0;
+  const scored = playing.map(l => {
+    const bowling = bestAvg ? avgOf(l) / bestAvg : 0;
+    const cashShare = hi > lo ? ((netBy.get(l.id) || 0) - lo) / (hi - lo) : 0.5;
+    return { ...l, net: netBy.get(l.id) || 0, mvpScore: bowling * 0.6 + cashShare * 0.4 };
+  }).sort((a, b) => b.mvpScore - a.mvpScore || b.series - a.series);
+  const mvp = scored[0] || null;
   return { ...ses, games, lines, teams: teamList, contested,
-           winner: contested ? teamList[0] : null, mvp,
+           winner: contested ? teamList[0] : null, mvp, mvpBoard: scored,
            pins: games.reduce((s,g) => s + g.total_score, 0),
            bestGame: games.length ? Math.max(...games.map(g => g.total_score)) : null };
 }
@@ -2491,8 +2539,18 @@ function profileSetup(){
     h('option', { value:v, selected: p.hand === v }, l)));
   const weight = h('input', { type:'number', min:6, max:20, value: p.ball_weight || 15 });
   const house = h('input', { type:'text', list:'houses2', value: p.home_house || HOUSES[0] });
-  const avatarUrl = h('input', { type:'text', value: p.avatar_url || '', placeholder:'optional — link to a picture' });
-  const file = h('input', { type:'file', accept:'image/*' });
+  const avatarUrl = h('input', { type:'text', value: p.avatar_url || '', placeholder:'or paste a link to one' });
+  const file = h('input', { type:'file', accept:'image/*', style:{ display:'none' },
+    onchange(){
+      const f = file.files && file.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = () => { clear(shot); shot.append(h('img', { src:r.result, alt:'' })); };
+      r.readAsDataURL(f);
+    } });
+  const shot = h('div.av.xl', {});
+  if (p.avatar_url) shot.append(h('img', { src:p.avatar_url, alt:'' }));
+  else shot.append(initials(p.display_name || name.value || '?'));
   const msg = h('div.err', {});
   return card(
     h('h2', {}, state.me && state.me.hand ? 'Your profile' : 'One quick thing first'),
@@ -2502,8 +2560,16 @@ function profileSetup(){
     h('label.f', {}, h('span', {}, 'Usual ball weight (pounds)'), weight),
     h('label.f', {}, h('span', {}, 'Home alley'), house),
     h('datalist', { id:'houses2' }, HOUSES.map(x => h('option', { value:x }))),
-    h('label.f', {}, h('span', {}, 'Picture (optional)'), avatarUrl),
-    h('label.f', {}, h('span', {}, '…or upload one'), file),
+    h('div.photo', {},
+      shot,
+      h('div', {}, h('div', { style:{ fontWeight:650 } }, 'Your picture'),
+        h('div.tiny.muted', { style:{ margin:'2px 0 8px' } }, 'Shows up next to your name everywhere.'),
+        h('button.btn.sm', { onclick(){ file.click(); } }, p.avatar_url ? 'Change photo' : 'Choose a photo'),
+        p.avatar_url ? h('button.btn.sm', { style:{ marginLeft:'6px' },
+          onclick(){ avatarUrl.value = ''; file.value = ''; clear(shot); shot.append(initials(p.display_name || '?')); toast('Removed — save to confirm'); } }, 'Remove') : null),
+      file),
+    h('details.gloss', { style:{ margin:'10px 0 0' } },
+      h('summary', {}, 'Rather paste a link?'), h('div', { style:{ padding:'0 14px 14px' } }, avatarUrl)),
     msg,
     h('button.btn.pri.wide.big', { style:{ marginTop:'12px' }, async onclick(){
       msg.className = 'err'; msg.textContent = '';
@@ -2957,7 +3023,8 @@ function showSession(id){
       body.append(card(h('div.spread', {},
         h('div.row', {}, avatar(D.profile.get(ses.mvp.id)),
           h('div', {}, h('div.up.gold', {}, 'Session MVP'),
-            h('div', { style:{ fontWeight:700 } }, ses.mvp.name))),
+            h('div', { style:{ fontWeight:700 } }, ses.mvp.name),
+            h('div.tiny.muted', {}, `${one(ses.mvp.series / ses.mvp.n)} average${ses.mvp.net ? ' · ' + money(ses.mvp.net) : ''}`))),
         h('div', { style:{ textAlign:'right' } },
           h('div.big.n', { style:{ fontSize:'22px', fontWeight:750 } }, ses.mvp.series),
           h('div.tiny.muted', {}, `${ses.mvp.n} games`)))));
@@ -3002,7 +3069,7 @@ function showSession(id){
     }
     body.append(glossary([
       ['Series', 'Every game one person bowled that night, added up.'],
-      ['Session MVP', 'The highest series of the night. Ties go to whoever bowled fewer games.'],
+      ['Session MVP', 'The best mix of how you bowled and what you won: 60% your average that night against the best average there, 40% where your money landed between the biggest winner and the biggest loser. A night with no money on it is decided on bowling alone.'],
       ['Team totals', 'All the pins from everyone on that team that night. Most pins wins.'],
       GLOSS.quick,
     ]));
@@ -3139,11 +3206,32 @@ function moneyNightForm(){
     ].sort((a,b) => a.name.localeCompare(b.name));
     for (const p of everyone){
       const on = chosen.has(p.key);
-      people.append(h('button.person.tap', { style: on ? { borderColor:'var(--blue)' } : {},
+      const card2 = h('button.person.tap', { style: on ? { borderColor:'var(--blue)' } : {},
         onclick(){ on ? chosen.delete(p.key) : chosen.add(p.key); drawPeople(); } },
         h('div.row', {}, p.profile ? avatar(p.profile) : nameChip(p.name),
-          h('div', {}, h('div', { style:{ fontWeight:650, fontSize:'13px' } }, p.name),
-            h('div.tiny', { cls: on ? 'good' : 'muted' }, on ? 'in' : (p.profile ? 'tap to add' : 'guest'))))));
+          h('div', { style:{ minWidth:0 } }, h('div', { style:{ fontWeight:650, fontSize:'13px' } }, p.name),
+            h('div.tiny', { cls: on ? 'good' : 'muted' }, on ? 'in' : (p.profile ? 'tap to add' : 'guest')))));
+      if (!p.profile){
+        /* a guest is just a name somebody typed — it should be as easy to
+           un-type as it was to add */
+        card2.append(h('button.rm', { style:{ marginTop:'8px', width:'100%', height:'28px' },
+          'aria-label': 'Delete ' + p.name,
+          async onclick(e){
+            e.stopPropagation();
+            const sum = moneySummaryKey(p.key);
+            if (!confirm(sum.nights
+              ? `Delete ${p.name}? Their ${sum.nights} night${sum.nights === 1 ? '' : 's'} and ${money(sum.net)} go too.`
+              : `Delete ${p.name}?`)) return;
+            try {
+              await db.deleteGuest(p.key.slice(2));
+              await load();
+              chosen.delete(p.key);
+              drawPeople();
+              toast(`${p.name} deleted`);
+            } catch (err){ toast(saveError(err)); }
+          } }, '✕  delete guest'));
+      }
+      people.append(card2);
     }
   }
   drawPeople();
@@ -3587,6 +3675,97 @@ const MONEY_GLOSS = [
 ];
 
 /* ======================================================================
+   TAB — POWER: who is actually the best bowler here
+   ====================================================================== */
+function powerInput(st){
+  return {
+    avg: st.avg, firstBall: st.firstBall, sparePct: st.sparePct,
+    strikePct: st.strikePct, sd: st.sd,
+    form: (st.last10avg != null && st.avg != null) ? st.last10avg - st.avg : null,
+  };
+}
+function powerRows(){
+  return [...D.stats.values()]
+    .filter(st => st.games >= MIN_GAMES)
+    .map(st => ({ st, name: st.name, profile: st.profile, ...B.powerScore(powerInput(st)) }))
+    .filter(r => r.score != null)
+    .sort((a, b) => b.score - a.score);
+}
+function powerBreakdown(r){
+  return barRows(r.parts.map(p => ({
+    label: p.label, value: p.value * 100, text: Math.round(p.value * 100),
+    color: p.value >= 0.66 ? 'g' : p.value >= 0.33 ? '' : 'r',
+    tipText: `${p.label}: ${Math.round(p.value * 100)} out of 100, worth ${Math.round(p.share * 100)}% of the ranking — ${p.blurb}`,
+  })));
+}
+function tabPower(){
+  const box = h('div', {});
+  box.append(sectionHead('Power rankings',
+    `Who is actually bowling the best. No handicap anywhere near this — it is pins, spares, strikes, steadiness and current form. ${MIN_GAMES} games to be ranked.`));
+  const rows = powerRows();
+  if (!rows.length){
+    box.append(h('p.empty', {}, `Nobody has ${MIN_GAMES} games yet. Log some and this fills itself in.`));
+    box.append(glossary(POWER_GLOSS()));
+    return box;
+  }
+  const best = f => rows.slice().sort((a,b) => (f(b.st) ?? -1) - (f(a.st) ?? -1))[0];
+  const steadiest = rows.slice().filter(r => r.st.sd != null).sort((a,b) => a.st.sd - b.st.sd)[0];
+  box.append(tiles([
+    tile('Number one', rows[0].name, `${Math.round(rows[0].score)} out of 100`),
+    tile('Best first ball', best(s2 => s2.firstBall).name, one(best(s2 => s2.firstBall).st.firstBall) + ' pins'),
+    tile('Best spares', best(s2 => s2.sparePct).name, pc(best(s2 => s2.sparePct).st.sparePct)),
+    steadiest ? tile('Steadiest', steadiest.name, '±' + one(steadiest.st.sd)) : tile('Steadiest', '—', ''),
+  ]));
+
+  box.append(h('div.card.pad0', {}, sortTable({
+    initial:'power', dir:-1, cardMain:'power', onRow: r => showBowler(r.st.id),
+    cols:[
+      { key:'name', label:'Bowler', text:true, value:r => r.name,
+        cell:r => h('div.row', {}, avatar(r.profile), h('span', { style:{ fontWeight:650 } }, r.name)) },
+      { key:'power', label:'Power', value:r => r.score, fmt:v => Math.round(v) },
+      { key:'avg', label:'Average', value:r => r.st.avg, fmt:one },
+      { key:'fb', label:'First ball', value:r => r.st.firstBall, fmt:one },
+      { key:'spare', label:'Spare %', value:r => r.st.sparePct, fmt:pc },
+      { key:'strike', label:'Strike %', value:r => r.st.strikePct, fmt:pc },
+      { key:'sd', label:'Steadiness', value:r => r.st.sd, fmt:one },
+      { key:'form', label:'Form', value:r => (r.st.last10avg != null && r.st.avg != null) ? r.st.last10avg - r.st.avg : null,
+        cell(r){
+          const d = (r.st.last10avg != null && r.st.avg != null) ? r.st.last10avg - r.st.avg : null;
+          return h('span.n', { cls: d == null ? 'muted' : d >= 0 ? 'good' : 'bad' },
+            d == null ? '—' : (d >= 0 ? '+' : '') + one(d));
+        } },
+    ], rows,
+  })));
+
+  const me = state.user ? rows.find(r => r.st.id === state.user.id) : null;
+  for (const r of [rows[0], me].filter((v, i, a) => v && a.indexOf(v) === i)){
+    box.append(sectionHead(r === me && r !== rows[0] ? 'Where you score' : `Where ${r.name} scores`,
+      'Each part out of 100. The bar is how good, the tooltip says how much it counts.'));
+    box.append(h('div.card', {}, powerBreakdown(r)));
+  }
+
+  const unranked = [...D.stats.values()].filter(st => st.games > 0 && st.games < MIN_GAMES);
+  if (unranked.length){
+    box.append(sectionHead('Not ranked yet'));
+    box.append(h('div.card', {}, barRows(unranked.map(st => ({
+      label: st.name, value: st.games, text: `${st.games}/${MIN_GAMES}`, color:'gd' })))));
+  }
+  box.append(glossary(POWER_GLOSS()));
+  return box;
+}
+function POWER_GLOSS(){
+  return [
+    ['What this is', `One number out of 100 for how well somebody bowls. It is a weighted mix of ${B.POWER_PARTS.map(p => p[0].toLowerCase()).join(', ')} — nothing else goes in.`],
+    ...B.POWER_PARTS.map(([label, weight, , blurb]) =>
+      [`${label} — ${weight}%`, blurb.charAt(0).toUpperCase() + blurb.slice(1) + '.']),
+    ['No handicap here', 'The handicap on the Home tab exists so everybody has a chance on the night. This table is the opposite: it is only about skill, so a low average cannot be dressed up.'],
+    ['Each part is scored between a floor and a ceiling', 'A 110 average scores nothing on the average part and a 215 scores full marks, with everything in between on a straight line. Same idea for the rest, so one enormous number cannot drown out everything else.'],
+    ['Missing pieces', 'If somebody has only ever entered final scores there is no spare or strike data for them. Those parts drop out and the rest share the weight, rather than being counted as zero.'],
+    GLOSS.sd, GLOSS.firstball,
+  ];
+}
+
+/* ======================================================================
    TAB 5 — RECORDS: the trophy case
    ====================================================================== */
 function subStats(games){
@@ -3822,7 +4001,7 @@ function tabTeams(){
     ['Their usual', 'The average of their two all-time averages — what you would expect from them normally.'],
     ['Difference', 'Combined average minus their usual. Green means the pair bowls better together than apart. It is not proof of anything, but it is fun.'],
     ['Win %', 'Games where your team had the most pins, out of games where teams were picked at all.'],
-    ['MVP', 'Highest series in a session. One per night.'],
+    ['MVP', 'One per night: the best mix of how you bowled and what you won.'],
     GLOSS.series,
   ]));
   return box;
@@ -3893,6 +4072,7 @@ const TABS = [
   ['home',     'Home',     tabHome],
   ['tonight',  'Tonight',  tabTonight],
   ['money',    'Money',    tabMoney],
+  ['power',    'Power',    tabPower],
   ['log',      'Log',      tabLog],
   ['bowlers',  'Bowlers',  tabBowlers],
   ['sessions', 'Sessions', tabSessions],

@@ -237,6 +237,31 @@ const T = (name, players, total) => ({ team:name, players, total });
 }
 eq('one team on its own is not a bet', B.settle([T('A',['a1'],300)], { stake:500 }).balance, 0);
 
+section('Power ranking');
+{
+  const strong = B.powerScore({ avg:210, firstBall:9.2, sparePct:68, strikePct:55, sd:16, form:10 });
+  const weak   = B.powerScore({ avg:115, firstBall:5.8, sparePct:22, strikePct:9,  sd:44, form:-12 });
+  ok('a strong bowler scores near the top', strong.score > 90, String(Math.round(strong.score)));
+  ok('a weak one scores near the bottom', weak.score < 12, String(Math.round(weak.score)));
+  ok('the strong one outranks the weak one by a mile', strong.score - weak.score > 70);
+  eq('every part of the formula is accounted for', strong.parts.length, 6);
+  eq('and the weights add up to one', Math.round(strong.parts.reduce((s2,p) => s2 + p.share, 0) * 1000) / 1000, 1);
+}
+{
+  const only = B.powerScore({ avg:160 });
+  eq('somebody who only ever typed totals is judged on what is known', Math.round(only.score), Math.round(B.band(160, 110, 215) * 100));
+  eq('the parts nobody has data for drop out', only.parts.length, 1);
+}
+eq('nothing at all scores nothing', B.powerScore({}).score, null);
+eq('the top of the scale is clamped', B.powerScore({ avg:300 }).score, 100);
+eq('and so is the bottom', B.powerScore({ avg:40 }).score, 0);
+{
+  const steady = B.powerScore({ avg:170, sd:16 }), swingy = B.powerScore({ avg:170, sd:44 });
+  ok('two bowlers with the same average are split by how steady they are', steady.score > swingy.score);
+  const better = B.powerScore({ avg:170, sd:25, sparePct:65 }), worse = B.powerScore({ avg:170, sd:25, sparePct:30 });
+  ok('and by whether they pick their spares up', better.score > worse.score);
+}
+
 section('Squaring up at the end');
 {
   const t = B.settleUp({ drew: 1500, nat: -500, tony: -500, mike: -500 });
@@ -321,7 +346,7 @@ function makeFixture(){
     ['ses3','2026-02-14',"Nat's birthday", { me:[190,150,205], nat:[179,84,90], tony:[108], bruce:[84] },
                                  { me:'A', bruce:'A', nat:'B', tony:'B' }],
   ];
-  const sessions = [], players = [], games = [], rolls = [], edits = [];
+  const sessions = [], players = [], games = [], rolls = [], edits = [], money = [], guests = [];
   for (const [id, played_on, title, byPlayer, teams] of plan){
     sessions.push({ id, played_on, house:'Bowl America Fairfax', title,
                     created_by:'me', created_at: played_on + 'T22:00:00Z' });
@@ -341,9 +366,14 @@ function makeFixture(){
       });
     }
   }
+  money.push(
+    { id:'m1', session_id:'ses1', game_no:1, profile_id:'nat',   amount_cents: 2000, created_by:'me', created_at:'2025-03-08T23:00:00Z' },
+    { id:'m2', session_id:'ses1', game_no:1, profile_id:'me',    amount_cents:-1000, created_by:'me', created_at:'2025-03-08T23:00:00Z' },
+    { id:'m3', session_id:'ses1', game_no:1, profile_id:'tony',  amount_cents: -500, created_by:'me', created_at:'2025-03-08T23:00:00Z' },
+    { id:'m4', session_id:'ses1', game_no:1, profile_id:'bruce', amount_cents: -500, created_by:'me', created_at:'2025-03-08T23:00:00Z' });
   edits.push({ id:1, game_id:'ses1-nat-2', editor_id:'me', at:'2025-03-09T10:00:00Z',
                before:{ total_score:88, profile_id:'nat' }, after:{ total_score:90, profile_id:'nat' } });
-  return { profiles:P, sessions, players, games, rolls, edits };
+  return { profiles:P, sessions, players, games, rolls, edits, money, guests };
 }
 
 function D_gamesNotMine(fx){ return `${fx.games.filter(g => g.profile_id !== 'me').length} games belong to other people`; }
@@ -381,7 +411,7 @@ async function browserTests(){
   ok('the page boots with the stubbed client', true);
   const engineTotal = await page.evaluate(() => window.BOWL.scoreCounts(Array(12).fill(10)).total);
   eq('the shipped engine scores a perfect game in the browser too', engineTotal, 300);
-  eq('every tab is on the tab strip', await page.locator('#tabs .tab').count(), 9);
+  eq('every tab is on the tab strip', await page.locator('#tabs .tab').count(), 10);
 
   section('Home');
   const leader = await page.locator('.champ').first().innerText();
@@ -468,7 +498,7 @@ async function browserTests(){
   section('Nothing overflows at 390px');
   for (const [id, label] of [['home','Home'],['log','Log'],['bowlers','Bowlers'],['sessions','Sessions'],
                              ['records','Records'],['teams','Teams'],['money','Money'],
-                             ['tonight','Tonight'],['me','Me']]){
+                             ['power','Power'],['tonight','Tonight'],['me','Me']]){
     await page.locator('#tabs .tab', { hasText: new RegExp(`^${label}$`) }).click();
     await page.waitForTimeout(120);
     const over = await page.evaluate(() => ({
@@ -722,6 +752,33 @@ async function browserTests(){
   await page.waitForTimeout(300);
   ok('a guest can simply be deleted',
      await page.evaluate(() => !window.APP.state.guests.some(g => g.name === 'Ash')));
+
+  section('Power rankings');
+  await page.locator('#tabs .tab', { hasText:'Power' }).click();
+  const power = await page.locator('#panel').innerText();
+  ok('the rankings render', /power rankings/i.test(power));
+  ok('and say plainly that no handicap is involved', /no handicap/i.test(power));
+  const order = await page.locator('#panel .rcard .rc-title').allInnerTexts();
+  const scores = await page.locator('#panel .rcard .rc-main').allInnerTexts();
+  ok('ranked best first', scores.map(Number).every((v, i, a) => i === 0 || a[i-1] >= v), JSON.stringify(scores));
+  ok('everybody ranked has enough games',
+     await page.evaluate(() => window.APP.D.stats && [...window.APP.D.stats.values()]
+       .filter(s => s.games >= 6).length >= 2));
+  ok('the breakdown shows every part of the formula',
+     (await page.locator('#panel .barrow').count()) >= 5);
+  ok('the leader is the best bowler, not the luckiest',
+     order[0] && /Drew|Nat/.test(order[0]), JSON.stringify(order.slice(0,3)));
+
+  section('MVP counts the money too');
+  await page.locator('#tabs .tab', { hasText:'Sessions' }).click();
+  await page.locator('#panel .card', { hasText:'Mar 8' }).first().click();
+  await page.waitForSelector('.sheet .inner');
+  const sheetTxt = await page.locator('.sheet .inner').innerText();
+  ok('the MVP is shown', /session mvp/i.test(sheetTxt));
+  ok('and it went to the one who cleaned up, not the top average',
+     /session mvp\s*\n?\s*Nat/i.test(sheetTxt.replace(/\s+/g, ' ')) || /Nat/.test(sheetTxt.split(/session mvp/i)[1]?.slice(0, 60) || ''),
+     sheetTxt.split(/session mvp/i)[1]?.slice(0, 80));
+  await page.locator('.sheet .closebtn').first().click();
 
   section('Phone manners');
   await page.locator('#tabs .tab', { hasText:/^Me$/ }).click();
