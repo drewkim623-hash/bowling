@@ -41,13 +41,19 @@ $$;
 
 -- -------------------------------------------------------------- outings
 create table if not exists sessions (
-  id         uuid primary key default gen_random_uuid(),
-  played_on  date not null,
-  house      text not null,
-  title      text,
-  created_by uuid not null references profiles(id) on delete cascade,
-  created_at timestamptz not null default now()
+  id          uuid primary key default gen_random_uuid(),
+  played_on   date not null,
+  house       text not null,
+  title       text,
+  created_by  uuid not null references profiles(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  -- When somebody pressed Finish. It locks nothing: the book stays editable
+  -- afterwards and this only stops the night offering itself back as still
+  -- open. Nullable because most nights never get finished, they just stop.
+  finished_at timestamptz
 );
+-- for a database created before finishing existed
+alter table sessions add column if not exists finished_at timestamptz;
 create index if not exists sessions_played_on_idx on sessions (played_on desc);
 
 -- Teams are per session and ad hoc. The same two people can be teammates one

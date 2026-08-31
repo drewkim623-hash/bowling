@@ -914,6 +914,46 @@ async function browserTests(){
     return true;
   }));
 
+  section('Finishing a night');
+  await goTo(page, 'tonight');
+  const anyNight = page.locator('#panel .nightrow button.card').first();
+  if (await anyNight.count()){
+    await anyNight.click();
+    await page.waitForTimeout(300);
+    const fin = page.locator('#panel button', { hasText:'Finish the session' });
+    if (await fin.count()){
+      await fin.click();
+      await page.waitForTimeout(400);
+      const done = await page.locator('#panel').innerText();
+      ok('finishing shows the record read off the money', /record/i.test(done));
+      ok('and the night written up', /written up|Read straight off/i.test(done));
+      ok('it is kept on the night, not on the phone',
+         await page.evaluate(() => {
+           const s = window.APP.state.sessions.find(x => x.finished_at);
+           return !!s;
+         }));
+      ok('and it says nothing is locked', /still fix a number|Un-finish/i.test(done));
+      /* the numbers stay editable, and everything below re-reads itself */
+      const box = page.locator('#panel .gamecard input.n').first();
+      if (await box.count()){
+        await box.fill('7');
+        await box.blur();
+        await page.waitForTimeout(400);
+        ok('a number can still be changed after finishing',
+           await page.locator('#panel button', { hasText:'Un-finish' }).count() === 1);
+      }
+      await page.locator('#panel button', { hasText:'Un-finish' }).click();
+      await page.waitForTimeout(300);
+      ok('and it can be un-finished',
+         await page.evaluate(() => !window.APP.state.sessions.some(x => x.finished_at)));
+    }
+    /* put the book down again — the sections after this one start from the
+       Tonight tab expecting to be able to start a night */
+    await page.locator('#panel .flowhead button', { hasText:'Done' }).click();
+    await page.waitForTimeout(250);
+  }
+  await goTo(page, 'home');
+
   section('Power rankings');
   await goTo(page, 'power');
   const power = await page.locator('#panel').innerText();

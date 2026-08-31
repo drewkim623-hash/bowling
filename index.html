@@ -1328,6 +1328,11 @@ function stubDB(){
     async signOut(){ user = null; },
     async saveProfile(patch){ const p = D.profiles.find(x => x.id === user.id); Object.assign(p, patch); },
     async createSession(row, roster){ D.sessions.push(row); roster.forEach(r => D.players.push({ session_id: row.id, ...r })); },
+    async setFinished(id, when){
+      const ses = D.sessions.find(x => x.id === id);
+      if (ses) ses.finished_at = when;
+      return true;
+    },
     async saveGame(game, rs, prev){
       const i = D.games.findIndex(g => g.id === game.id);
       if (i >= 0){
@@ -1459,6 +1464,16 @@ async function liveDB(){
     async deleteGame(id){
       const { error } = await sb.from('games').delete().eq('id', id);
       if (error) throw error;
+    },
+    /* Finishing is shared — you finish the night on your phone and it is
+       finished on everybody's. But the column arrives with a migration the
+       owner has to run by hand, so until they do, say so rather than throw:
+       the caller falls back to remembering it on this device alone. */
+    async setFinished(id, when){
+      const { error } = await sb.from('sessions').update({ finished_at: when }).eq('id', id);
+      if (error && /finished_at/.test(error.message || '')) return false;
+      if (error) throw error;
+      return true;
     },
     async deleteSession(id){
       const { error } = await sb.from('sessions').delete().eq('id', id);   // games and rolls cascade
@@ -3960,17 +3975,45 @@ function moneyLedger(ses){
     }));
   }
 
+  /* Finishing is a fact about the night, not about this phone, so it belongs
+     in the database. The column arrives with a migration somebody has to run
+     by hand, though, so if it is not there yet this still works — it just only
+     knows on the device you pressed it. */
   const doneKey = 'bowl.money.done.' + ses.id;
-  let finished = (() => { try { return !!localStorage.getItem(doneKey); } catch { return false; } })();
+  const localDone = () => { try { return !!localStorage.getItem(doneKey); } catch { return false; } };
+  let finished = !!ses.finished_at || localDone();
+  let sharedFinish = !!ses.finished_at;
+
+  async function setFinished(on){
+    const when = on ? new Date().toISOString() : null;
+    let shared = false;
+    try { shared = db.setFinished ? await db.setFinished(ses.id, when) : false; }
+    catch (err){ toast(saveError(err)); return; }
+    /* Read it back rather than trusting what we just set: loadAll hands out
+       copies, so a session mutated in place here would be quietly overwritten
+       by the next save. The database is the one that knows. */
+    if (shared){
+      await load();
+      ses.finished_at = D.session.get(ses.id)?.finished_at || null;
+    }
+    sharedFinish = shared && on;
+    /* only lean on this device when the database could not hold it */
+    try {
+      if (on && !shared) localStorage.setItem(doneKey, when);
+      else localStorage.removeItem(doneKey);
+    } catch {}
+    finished = on;
+    drawWrap();
+    if (on) wrap.scrollIntoView({ behavior:'smooth', block:'start' });
+  }
+
   const wrap = h('div', {});
   function drawWrap(){
     clear(wrap);
     if (!finished){
       wrap.append(h('button.btn.pri.wide.big', { style:{ marginTop:'16px' }, onclick(){
         if (!nightRounds().length){ toast('Nothing typed in yet.'); return; }
-        try { localStorage.setItem(doneKey, new Date().toISOString()); } catch {}
-        finished = true; drawWrap();
-        wrap.scrollIntoView({ behavior:'smooth', block:'start' });
+        setFinished(true);
       } }, '\u2713  Finish the session'));
       wrap.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
         'Nothing locks — you can still fix a number afterwards.'));
@@ -3979,10 +4022,12 @@ function moneyLedger(ses){
     wrap.append(sectionHead("Tonight's record", 'Read off the money. Nobody logged a score.'));
     wrap.append(recordCard());
     wrap.append(recapSection(ses, nightRounds, nightTally));
-    wrap.append(h('button.btn.wide', { style:{ marginTop:'12px' }, onclick(){
-      try { localStorage.removeItem(doneKey); } catch {}
-      finished = false; drawWrap();
-    } }, 'Un-finish it'));
+    wrap.append(h('button.btn.wide', { style:{ marginTop:'12px' },
+      onclick(){ setFinished(false); } }, 'Un-finish it'));
+    wrap.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
+      sharedFinish ? 'Finished. Everybody sees this night as done.'
+                   : 'Finished on this device only \u2014 the database has not had '
+                   + 'the finished_at column added yet.'));
   }
   drawWrap();
   box.append(wrap);
@@ -4296,7 +4341,7 @@ function tabTonight(){
     return box;
   }
   const last = (() => { try { return localStorage.getItem('bowl.money.night'); } catch { return null; } })();
-  if (last && D.session.get(last)){
+  if (last && D.session.get(last) && !D.session.get(last).finished_at){
     const ses = D.session.get(last);
     box.append(sectionHead('Still open'));
     box.append(h('div.nightrow', {},
@@ -4325,7 +4370,8 @@ function tabTonight(){
           h('div.spread', {},
             h('div', {}, h('div', { style:{ fontWeight:650 } }, dateLabel(ses.played_on)),
               h('div.tiny.muted', {}, ses.house)),
-            h('span.chip', {}, cash.length ? 'has a book' : 'no money yet'))),
+            h('span.chip', { cls: ses.finished_at ? 'on' : '' },
+              ses.finished_at ? 'finished' : cash.length ? 'has a book' : 'no money yet'))),
         h('button.xbtn', { 'aria-label':`Delete the night of ${dateLabel(ses.played_on)}`,
           title:'Delete this night', async onclick(){
             /* Say out loud everything that goes, because none of it comes back. */

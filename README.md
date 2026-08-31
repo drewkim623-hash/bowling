@@ -198,6 +198,36 @@ bottom that defines each stat in one plain sentence. Nobody has to know what a h
 
 ---
 
+## Finishing a night
+
+Press **Finish the session** at the bottom of a night's book and the site reads the
+night back to you: everybody's record for the night, the square-up, and a few
+paragraphs about what happened. Nothing locks — you can still go back and fix a
+number, and everything below re-reads itself when you do.
+
+It needs one column, which older databases will not have. In Supabase →
+**SQL Editor**, run:
+
+```sql
+alter table sessions add column if not exists finished_at timestamptz;
+```
+
+Until you run it, finishing still works but only on the device you pressed it on,
+and the page says so underneath. Once it is there, you finish the night on your
+phone and it is finished on everybody's.
+
+## The write-up
+
+Every finished night is written up automatically, from the money and the sides read
+off it. No key, no network, no cost — it is a function in the page. It leads on
+whatever actually happened, and reaches back into everybody's record before tonight
+for the "that is ten straight now" sort of line.
+
+If you have set up the photo reader below, a second button appears offering to ask
+Claude for a longer one. That is optional and always will be — deploy
+`supabase/functions/write-recap` the same way as `parse-photo`, using the same
+`ANTHROPIC_API_KEY` secret.
+
 ## Reading a photo (optional)
 
 The site can read a photo of the monitor above the lane, or of the notes page you
