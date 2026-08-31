@@ -3921,6 +3921,28 @@ function sidesLine(out){
   return el;
 }
 
+/* Sending the standings to the group chat.
+
+   The chat is iMessage, and Apple has no way for a web page to post into a
+   thread — nothing can, so nothing here pretends to. What a phone does give us
+   is the share sheet: one tap, pick the thread, send. On a desktop browser
+   there is usually no share sheet, so it falls back to the clipboard and says
+   which of the two just happened, because a button that silently does nothing
+   is worse than no button. */
+async function sendToGroup(text){
+  if (navigator.share){
+    try { await navigator.share({ text }); return; }
+    catch (err){
+      /* the user backing out of the share sheet is not a failure */
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Copied \u2014 paste it into the chat');
+  } catch { toast('This browser will not let a page copy or share.'); }
+}
+
 /* The book for one night. A card per game, a line per person, a running total
    that never goes stale, and everything saved the moment you type it. */
 function moneyLedger(ses){
@@ -3937,6 +3959,31 @@ function moneyLedger(ses){
                        Number(localStorage.getItem(gameCountKey(ses.id))) || 1);
   const cell = (n, k) => draft.get(n + '|' + k) || 0;
   const totalFor = k => { let t = 0; for (let n = 1; n <= games; n++) t += cell(n, k); return t; };
+
+  /* What actually goes in the message. Plain lines, no attempt at columns —
+     iMessage is not monospaced and padded spaces come out ragged. */
+  function standingsText(){
+    const rows = [...keys].map(k => ({ k, t: totalFor(k) })).sort((a, b) => b.t - a.t);
+    const played = nightRounds().length;
+    return [
+      `\u{1f3b3} ${ses.house}${ses.title ? ' \u00b7 ' + ses.title : ''}`,
+      played ? `After ${played} game${played === 1 ? '' : 's'}:` : 'Just getting started:',
+      '',
+      ...rows.map(r => `${personName(r.k)}  ${money(r.t)}`),
+    ].join('\n');
+  }
+  function finalText(){
+    const nets = {};
+    for (const k of keys) nets[k] = totalFor(k);
+    const moves = B.settleUp(nets);
+    const up = writeUpOf(ses);
+    return [
+      standingsText().replace(/^After /m, 'Final, after '),
+      ...(moves.length ? ['', 'Square up:',
+        ...moves.map(m => `${personName(m.from)} \u2192 ${personName(m.to)} ${moneyFlat(m.cents)}`)] : []),
+      ...(up ? ['', up.headline] : []),
+    ].join('\n');
+  }
 
   /* Big enough to hold up and read off when somebody asks. */
   function whosUp(){
@@ -3972,6 +4019,8 @@ function moneyLedger(ses){
       const off = rows.reduce((a, r) => a + r.t, 0);
       if (off !== 0) body.append(h('p.tiny.gold', { style:{ marginTop:'14px' } },
         `The book is off by ${money(off)} — somewhere a game does not add up to zero.`));
+      body.append(h('button.btn.pri.wide', { style:{ marginTop:'16px' },
+        onclick(){ sendToGroup(standingsText()); } }, '\u{1f4f2}  Send to the group'));
     }, `${games} game${games === 1 ? '' : 's'} so far`);
   }
 
@@ -4285,16 +4334,8 @@ function moneyLedger(ses){
       h('div.payrow', {}, h('b', {}, personName(m.from)), h('span.arrow', {}, '→'),
         h('b', {}, personName(m.to)), h('b.n', { style:{ marginLeft:'auto' } }, moneyFlat(m.cents)))));
     square.append(rows2);
-    square.append(h('button.btn.wide', { style:{ marginTop:'8px' }, onclick(){
-      const lines = [
-        `${dateLabel(ses.played_on)} · ${ses.house}`,
-        ...[...keys].sort((a,b) => totalFor(b) - totalFor(a)).map(k => `${personName(k)} ${money(totalFor(k))}`),
-        '',
-        ...moves.map(m => `${personName(m.from)} → ${personName(m.to)} ${moneyFlat(m.cents)}`),
-      ].join('\n');
-      navigator.clipboard?.writeText(lines).then(() => toast('Copied for the group chat'),
-                                                 () => toast('Could not copy on this browser'));
-    } }, 'Copy it for the group chat'));
+    square.append(h('button.btn.wide', { style:{ marginTop:'8px' },
+      onclick(){ sendToGroup(finalText()); } }, '\u{1f4f2}  Send it to the group'));
   }
 
   const _drawTotals = drawTotals;

@@ -1019,6 +1019,53 @@ async function browserTests(){
   }
   await goTo(page, 'home');
 
+  section('Sending it to the group');
+  await goTo(page, 'tonight');
+  const nightForShare = page.locator('#panel .nightrow button.card').first();
+  if (await nightForShare.count()){
+    await nightForShare.click();
+    await page.waitForSelector('#panel .gamecard');
+    /* pretend to be a phone with a share sheet, and catch what it is handed */
+    await page.evaluate(() => {
+      window.__shared = null;
+      navigator.share = async (data) => { window.__shared = data; };
+    });
+    await page.locator('.moneystrip.stick').click();
+    await page.waitForSelector('.sheet .bigup');
+    await page.locator('.sheet button', { hasText:'Send to the group' }).click();
+    await page.waitForTimeout(250);
+    const msg = await page.evaluate(() => window.__shared && window.__shared.text);
+    ok('the share sheet gets a message, not an empty one', !!msg && msg.length > 20);
+    ok('it says where and how far in', /Bowl America|After \d+ game|getting started/.test(msg || ''));
+    ok('and it lists everybody with their money',
+       (msg || '').split('\n').filter(l => /[−-]?\$\d/.test(l)).length >= 2, msg);
+    ok('nothing in it claims a score was logged',
+       !/\bpins?\b|\bstrikes?\b|average/i.test(msg || ''));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+
+    /* a desktop browser has no share sheet — it must still do something */
+    await page.evaluate(() => {
+      delete navigator.share;
+      window.__copied = null;
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async t => { window.__copied = t; } },
+      });
+    });
+    await page.locator('.moneystrip.stick').click();
+    await page.waitForSelector('.sheet .bigup');
+    await page.locator('.sheet button', { hasText:'Send to the group' }).click();
+    await page.waitForTimeout(250);
+    ok('with no share sheet it falls back to the clipboard',
+       !!(await page.evaluate(() => window.__copied)));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+    await page.locator('#panel .flowhead button', { hasText:'Done' }).click();
+    await page.waitForTimeout(250);
+  }
+  await goTo(page, 'home');
+
   section('Finishing a night');
   await goTo(page, 'tonight');
   const anyNight = page.locator('#panel .nightrow button.card').first();
