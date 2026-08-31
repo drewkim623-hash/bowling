@@ -314,6 +314,36 @@ section('Reading the sides off the money');
   ok('which is not a real game, and it does not balance', !allup.balanced);
 }
 
+section('Together against apart');
+{
+  /* Two people who only ever win when they are together, and only ever lose
+     when they are not. If the baseline counted their games together it would
+     be dragged up by them and the pairing would look ordinary. */
+  const rounds = [
+    { a: 500, b: 500, c:-500, d:-500 },   // a+b together, won
+    { a: 500, b: 500, c:-500, d:-500 },   // again
+    { a: 500, b: 500, c:-500, d:-500 },   // and again
+    { a:-500, c:-500, b: 500, d: 500 },   // a with c, lost. b with d, won
+    { a:-500, c:-500, b: 500, d: 500 },
+    { a:-500, d:-500, b: 500, c: 500 },
+  ];
+  const D = rounds.map(o => B.teamsFromMoney(
+    Object.entries(o).map(([key, cents]) => ({ key, cents }))));
+
+  /* a: 3 wins with b, 3 losses without. So together 100%, apart 0%. */
+  const withB = D.filter(r => r.teams.some(t => t.players.includes('a') && t.players.includes('b')));
+  const noB   = D.filter(r => !r.teams.some(t => t.players.includes('a') && t.players.includes('b')));
+  const wonIn = (rs, k) => rs.filter(r => r.winners.includes(k)).length;
+  eq('the fixture is what it says: together they never lost', wonIn(withB, 'a'), 3);
+  eq('and apart he never won', wonIn(noB, 'a'), 0);
+
+  /* the baseline must be the games WITHOUT the partner, not all of them */
+  const overall = wonIn(D, 'a') / D.length * 100;          // 50% — contaminated
+  const trueApart = wonIn(noB, 'a') / noB.length * 100;    // 0%  — correct
+  ok('an overall rate is not a baseline, it contains the games being measured',
+     Math.round(overall) !== Math.round(trueApart));
+}
+
 section('Power off the money');
 {
   const P = o => B.moneyPower({ won:0, lost:0, net:0, nights:1, ...o });

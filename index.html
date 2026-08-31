@@ -1852,30 +1852,49 @@ function sessionSummary(ses){
    which is the only way to tell a good pairing from two good bowlers. */
 function moneyPairs(minGames = 3){
   const map = new Map();
+  /* every game each person played, and who was on their side for it */
+  const seen = new Map();
+  const note = (key, won, side) => {
+    if (!seen.has(key)) seen.set(key, []);
+    seen.get(key).push({ won, side });
+  };
   for (const r of D.moneyRounds){
     for (const t of r.teams){
+      const side = new Set(t.players);
+      for (const key of t.players) note(key, t.won, side);
       if (!t.partnership) continue;      // the money does not say they were together
-      const side = [...t.players].sort();
-      for (let i = 0; i < side.length; i++)
-        for (let j = i + 1; j < side.length; j++){
-          const key = side[i] + '|' + side[j];
+      const sorted = [...t.players].sort();
+      for (let i = 0; i < sorted.length; i++)
+        for (let j = i + 1; j < sorted.length; j++){
+          const key = sorted[i] + '|' + sorted[j];
           if (!map.has(key))
-            map.set(key, { a: side[i], b: side[j], n:0, won:0, nights:new Set() });
+            map.set(key, { a: sorted[i], b: sorted[j], n:0, won:0, nights:new Set() });
           const p = map.get(key);
           p.n++; if (t.won) p.won++;
           p.nights.add(r.session_id);
         }
     }
   }
+  /* How often somebody wins WITHOUT a particular partner. Their overall rate
+     will not do: it counts the games played together, so the baseline would
+     contain the very thing it is the baseline for, and a pair who always bowl
+     together would be measured against themselves. */
+  const withoutPct = (key, mate) => {
+    const games = (seen.get(key) || []).filter(g => !g.side.has(mate));
+    if (!games.length) return null;
+    return (games.filter(g => g.won).length / games.length) * 100;
+  };
   return [...map.values()]
     .filter(p => p.n >= minGames)
     .map(p => {
-      const ra = moneyRecord(p.a), rb = moneyRecord(p.b);
       const together = (p.won / p.n) * 100;
-      /* what you would expect of the two of them if the pairing meant nothing */
-      const apart = (ra.winPct != null && rb.winPct != null) ? (ra.winPct + rb.winPct) / 2 : null;
-      return { ...p, nights: p.nights.size, nameA: ra.name, nameB: rb.name,
-               together, apart, delta: apart == null ? null : together - apart };
+      const soloA = withoutPct(p.a, p.b), soloB = withoutPct(p.b, p.a);
+      const apart = (soloA != null && soloB != null) ? (soloA + soloB) / 2
+                  : (soloA != null ? soloA : soloB);
+      return { ...p, nights: p.nights.size,
+               nameA: personName(p.a), nameB: personName(p.b),
+               together, apart, soloA, soloB,
+               delta: apart == null ? null : together - apart };
     })
     .sort((x, y) => (y.delta ?? -999) - (x.delta ?? -999));
 }
@@ -5169,10 +5188,15 @@ function tabTeams(){
                  `${pc(pairs[0].together)} together, ${pairs[0].n} games`)
              : tile('Pairings so far', int(pairs.length), 'two games together or more'),
     ], 'two'));
+    box.append(h('p.sub', { style:{ marginTop:'14px' } },
+      'How much better the two of them do together than they each do without '
+      + 'the other. A pair on +20 win twenty games in a hundred more often side '
+      + 'by side than they manage apart; a pair on \u221220 are better off split up.'));
     box.append(card(divergingBars(pairs.filter(p => p.delta != null).map(p => ({
       label: `${p.nameA}+${p.nameB}`, value: p.delta,
-      tipText: `${p.nameA} + ${p.nameB}: win ${pc(p.together)} of ${p.n} games together, `
-             + `against ${pc(p.apart)} for the two of them apart`,
+      tipText: `${p.nameA} + ${p.nameB} win ${pc(p.together)} of the ${p.n} games they `
+             + `have bowled on the same side. Without each other they win `
+             + `${pc(p.apart)} — ${p.nameA} ${pc(p.soloA)}, ${p.nameB} ${pc(p.soloB)}.`,
     })))));
     box.append(h('div.card.pad0', {}, sortTable({
       initial:'delta', dir:-1,
@@ -5181,12 +5205,12 @@ function tabTeams(){
         { key:'n', label:'Games together', value:p => p.n },
         { key:'nights', label:'Nights', value:p => p.nights },
         { key:'won', label:'Won', value:p => p.won },
-        { key:'together', label:'Together', value:p => p.together, fmt:pc },
-        { key:'apart', label:'Apart', value:p => p.apart, fmt:pc },
-        { key:'delta', label:'Difference', value:p => p.delta,
+        { key:'together', label:'Win % together', value:p => p.together, fmt:pc },
+        { key:'apart', label:'Win % without each other', value:p => p.apart, fmt:pc },
+        { key:'delta', label:'Better together by', value:p => p.delta,
           cell:p => p.delta == null ? h('span.muted', {}, '\u2014')
             : h('span.n', { cls: p.delta >= 0 ? 'good' : 'bad' },
-                (p.delta >= 0 ? '+' : '') + Math.round(p.delta) + '%') },
+                (p.delta >= 0 ? '+' : '') + Math.round(p.delta)) },
       ], rows: pairs })));
   }
 
