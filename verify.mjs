@@ -940,15 +940,41 @@ async function browserTests(){
      await page.locator('.sticky-cta').count() === 0);
 
 
+  section('Nothing destructive under a fast thumb');
+  await goTo(page, 'tonight');
+  {
+    /* the who-turned-up list is tapped through at speed; it must not carry a
+       button that erases somebody's whole history */
+    const picker = page.locator('#panel .people');
+    if (await picker.count())
+      ok('the who-is-in list has no delete on it',
+         await picker.locator('button', { hasText:/delete/i }).count() === 0);
+  }
+
   section('Guests can be tidied up');
-  await goTo(page, 'money');
-  const mikeCard = page.locator('#panel .card', { hasText:'Delete Mike' });
-  await mikeCard.locator('input[type=text]').fill('Michael');
-  await mikeCard.locator('button.btn.sm', { hasText:'Rename' }).click();
-  await page.waitForTimeout(250);
+  /* All of this used to be at the foot of the Money tab. It lives on People
+     now, one card per person, behind an Edit that keeps the destructive
+     buttons out of the way until you ask for them. */
+  await goTo(page, 'people');
+  const openEdit = async name => {
+    const card = page.locator('#panel .card').filter({ hasText: name }).first();
+    const toggle = card.locator('button').filter({ hasText: /^(Edit|Done)$/ }).first();
+    if ((await toggle.innerText()).trim() === 'Edit') await toggle.click();
+    await page.waitForTimeout(150);
+    return card;
+  };
+  /* count() counts hidden nodes too, so this has to ask about visibility or
+     it passes without testing anything */
+  ok('a guest\u2019s controls are hidden until you ask',
+     await page.locator('#panel button:visible').filter({ hasText:'Rename' }).count() === 0);
+
+  const mikeCard = await openEdit('Mike');
+  await mikeCard.locator('input[type=text]').first().fill('Michael');
+  await mikeCard.locator('button', { hasText:'Rename' }).first().click();
+  await page.waitForTimeout(300);
   ok('a guest can be renamed and keeps their money',
      await page.evaluate(() => window.APP.state.guests.some(g => g.name === 'Michael')));
-  ok('the book shows the new name', /Michael/.test(await page.locator('#panel').innerText()));
+  ok('the page shows the new name', /Michael/.test(await page.locator('#panel').innerText()));
 
   const netBefore = await page.evaluate(() => {
     const g = window.APP.state.guests.find(x => x.name === 'Michael');
@@ -956,10 +982,10 @@ async function browserTests(){
     const sum = k => window.APP.state.money.filter(k).reduce((s, m) => s + m.amount_cents, 0);
     return { guest: sum(m => m.guest_id === g.id), drew: sum(m => m.profile_id === drew.id) };
   });
-  const card2 = page.locator('#panel .card', { hasText:'Delete Michael' });
+  const card2 = await openEdit('Michael');
   await card2.locator('select').selectOption({ label:'Drew' });
-  await card2.locator('button.btn.sm', { hasText:'Merge' }).click();
-  await page.waitForTimeout(400);
+  await card2.locator('button', { hasText:'Merge' }).first().click();
+  await page.waitForTimeout(500);
   ok('merging a guest into an account moves every penny',
      await page.evaluate(([b]) => {
        const drew = window.APP.state.profiles.find(p => p.display_name === 'Drew');
@@ -970,11 +996,17 @@ async function browserTests(){
   ok('and the guest is gone afterwards',
      await page.evaluate(() => !window.APP.state.guests.some(g => g.name === 'Michael')));
 
-  const ash = page.locator('#panel .card', { hasText:'Delete Ash' });
-  await ash.locator('button.btn.wide.danger').click();
-  await page.waitForTimeout(300);
+  const ash = await openEdit('Ash');
+  await ash.locator('button', { hasText:/^Delete Ash/ }).first().click();
+  await page.waitForTimeout(400);
   ok('a guest can simply be deleted',
      await page.evaluate(() => !window.APP.state.guests.some(g => g.name === 'Ash')));
+
+  ok('and none of it is on the Money tab any more', await (async () => {
+    await goTo(page, 'money');
+    const t = await page.locator('#panel').innerText();
+    return !/rename/i.test(t) && !/merge/i.test(t);
+  })());
 
   section('Getting around');
   /* The one place that drives the bar by clicking it, the way a thumb does. */

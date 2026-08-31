@@ -3988,26 +3988,9 @@ function moneyNightForm(){
         h('div.row', {}, p.profile ? avatar(p.profile) : nameChip(p.name),
           h('div', { style:{ minWidth:0 } }, h('div', { style:{ fontWeight:650, fontSize:'13px' } }, p.name),
             h('div.tiny', { cls: on ? 'good' : 'muted' }, on ? 'in' : (p.profile ? 'tap to add' : 'guest')))));
-      if (!p.profile){
-        /* a guest is just a name somebody typed — it should be as easy to
-           un-type as it was to add */
-        card2.append(h('button.rm', { style:{ marginTop:'8px', width:'100%', height:'28px' },
-          'aria-label': 'Delete ' + p.name,
-          async onclick(e){
-            e.stopPropagation();
-            const sum = moneySummaryKey(p.key);
-            if (!confirm(sum.nights
-              ? `Delete ${p.name}? Their ${sum.nights} night${sum.nights === 1 ? '' : 's'} and ${money(sum.net)} go too.`
-              : `Delete ${p.name}?`)) return;
-            try {
-              await db.deleteGuest(p.key.slice(2));
-              await load();
-              chosen.delete(p.key);
-              drawPeople();
-              toast(`${p.name} deleted`);
-            } catch (err){ toast(saveError(err)); }
-          } }, '✕  delete guest'));
-      }
+      /* No delete here. This is the list you tap through at speed to say who
+         turned up, and a button that erases somebody's whole history does not
+         belong under a thumb doing that. It is on the People tab. */
       people.append(card2);
     }
   }
@@ -4942,43 +4925,9 @@ function tabMoney(){
     box.append(h('div.card', {}, lineChart(cum, { label:'dollars' })));
   }
 
-  if (state.user && state.guests.length){
-    box.append(sectionHead('Guests', 'People without an account. Rename them, hand their history to a real account when they make one, or take them out altogether.'));
-    for (const g of [...state.guests].sort((a,b) => a.name.localeCompare(b.name))){
-      const k = keyOfGuest(g.id);
-      const sum = moneySummaryKey(k);
-      const nameInput = h('input', { type:'text', value:g.name });
-      const pick = h('select', {}, h('option', { value:'' }, 'give their history to…'),
-        [...state.profiles].sort((a,b) => a.display_name.localeCompare(b.display_name))
-          .map(p => h('option', { value:p.id }, p.display_name)));
-      box.append(h('div.card', {},
-        h('div.row', {}, nameInput,
-          h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
-            const n = nameInput.value.trim();
-            if (!n){ toast('A guest needs a name.'); return; }
-            try { await db.renameGuest(g.id, n); await load(); toast('Renamed'); render(); }
-            catch (err){ toast(saveError(err)); }
-          } }, 'Rename')),
-        h('div.row.wrapf', { style:{ marginTop:'8px' } },
-          h('span.chip', {}, `${sum.nights} night${sum.nights === 1 ? '' : 's'}`),
-          h('span.chip', {}, moneyPill(sum.net))),
-        h('div.row', { style:{ marginTop:'10px' } }, pick,
-          h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
-            if (!pick.value){ toast('Pick an account first.'); return; }
-            const who = D.profile.get(pick.value);
-            if (!confirm(`Move everything ${g.name} has won and lost onto ${who.display_name}? ${g.name} then goes away.`)) return;
-            try { await mergeGuestInto(g.id, pick.value); toast(`${g.name} is now ${who.display_name}`); render(); }
-            catch (err){ toast(saveError(err)); }
-          } }, 'Merge')),
-        h('button.btn.wide.danger', { style:{ marginTop:'10px' }, async onclick(){
-          if (!confirm(sum.nights
-            ? `Delete ${g.name}? Their ${sum.nights} night${sum.nights === 1 ? '' : 's'} and ${money(sum.net)} go too. If they are getting an account, merge instead.`
-            : `Delete ${g.name}?`)) return;
-          try { await db.deleteGuest(g.id); await load(); toast('Gone'); render(); }
-          catch (err){ toast(saveError(err)); }
-        } }, `Delete ${g.name}`)));
-    }
-  }
+  /* Adding, renaming, merging and deleting people all live on the People tab
+     now. They were here as well, which meant two places to keep in step and
+     one of them at the bottom of a page nobody scrolls. */
 
   box.append(sectionHead('Night by night', 'Tap one to open its book again.'));
   const bySession = new Map();
@@ -5685,6 +5634,32 @@ function tabPeople(){
         onclick(){ showBowler(r.key.slice(2)); } }, 'Their whole story') : null,
       editing));
   }
+
+  /* This used to be a tab of its own called Bowlers. With nobody logging
+     scores it was an empty table above a list of the same people who are
+     already on this page, so it is a section here, and only when somebody
+     has actually bowled a scored game. */
+  const scored = [...D.stats.values()].filter(x => x.games);
+  if (scored.length){
+    box.append(sectionHead('The bowling',
+      'Averages, strikes and spares, for whoever logs them. Tap anyone for the whole story.'));
+    box.append(h('div.card.pad0', {}, sortTable({
+      initial:'avg', dir:-1, onRow: r => showBowler(r.id),
+      cols:[
+        { key:'name', label:'Bowler', text:true, value:r => r.name,
+          cell:r => h('div.row', {}, avatar(r.profile), h('span', { style:{ fontWeight:650 } }, r.name)) },
+        { key:'avg', label:'Average', value:r => r.avg, fmt:one },
+        { key:'games', label:'Games', value:r => r.games },
+        { key:'high', label:'High', value:r => r.high },
+        { key:'sd', label:'Consistency', value:r => r.sd, fmt:one },
+        { key:'fb', label:'First ball', value:r => r.firstBall, fmt:one },
+        { key:'strike', label:'Strike %', value:r => r.strikePct, fmt:pc },
+        { key:'spare', label:'Spare %', value:r => r.sparePct, fmt:pc },
+        { key:'tenth', label:'10th frame', value:r => r.tenthAvg, fmt:one },
+      ],
+      rows: scored,
+    })));
+  }
   return box;
 }
 
@@ -5741,7 +5716,7 @@ const TABS = [
   ['money',    'Money',    tabMoney],
   ['power',    'Power',    tabPower],
   ['log',      'Log',      tabLog],
-  ['bowlers',  'Bowlers',  tabBowlers],
+  ['bowlers',  'People',   tabPeople],   // an old link; People is where it went
   ['sessions', 'Sessions', tabSessions],
   ['records',  'Records',  tabRecords],
   ['teams',    'Teams',    tabTeams],
@@ -5789,7 +5764,6 @@ const STATS_PAGES = [
   ['teams',    '\u{1f91d}', 'Teams',          'Who you win with, read off the money'],
   ['records',  '\u{1f3c6}', 'Records',        'The money records, and the trophy case'],
   ['sessions', '\u{1f4c5}', 'Sessions',       'Every night out, one card each, all the way back'],
-  ['bowlers',  '\u{1f3b3}', 'Bowlers',        'Averages, strikes and spares, for whoever logs them'],
   ['log',      '\u270f\ufe0f', 'Log a session',  'Score it live, or type one up after'],
   ['archive',  '\u{1f4e6}', 'Archive',        'Nights you put away, and can bring back'],
 ];
