@@ -5662,7 +5662,7 @@ window.addEventListener('hashchange', () => {
   const hash = location.hash.slice(1);
   if (TABS.some(t => t[0] === hash) && hash !== current) go(hash);
 });
-window.APP = { state, D, go, boot, render, B };   // handy for the test harness
+window.APP = { state, D, go, boot, render, B, setArchived };   // handy for the test harness
 await boot();
 </script>
 </body>

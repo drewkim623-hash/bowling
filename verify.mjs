@@ -1087,6 +1087,42 @@ async function browserTests(){
   ok('while the night itself still exists',
      await page.evaluate(s2 => window.APP.state.all.sessions.some(x => x.id === s2), doomed));
 
+  section('An archived night counts for nothing');
+  {
+    const sid = await page.evaluate(() => window.APP.state.sessions.find(
+      x => (window.APP.D.roundsOfNight.get(x.id) || []).length)?.id);
+    if (sid){
+      const before3 = await page.evaluate(() => ({
+        nets: [...window.APP.D.moneyByPerson.entries()].sort().map(([k, v]) => k + ':' + v).join(','),
+        nights: window.APP.D.roundsOfNight.size,
+        rows: window.APP.state.money.length,
+      }));
+      await page.evaluate(async s2 => { await window.APP.setArchived(s2, true); }, sid);
+      const during = await page.evaluate(() => ({
+        nets: [...window.APP.D.moneyByPerson.entries()].sort().map(([k, v]) => k + ':' + v).join(','),
+        nights: window.APP.D.roundsOfNight.size,
+        rows: window.APP.state.money.length,
+        stillThere: window.APP.state.all.money.length,
+      }));
+      ok('putting a night away changes the all-time totals', during.nets !== before3.nets);
+      ok('and drops it out of the count of nights', during.nights === before3.nights - 1);
+      ok('its money stops being counted', during.rows < before3.rows);
+      /* the whole point of archiving rather than deleting */
+      ok('but every row of it is still in the database', during.stillThere === before3.rows);
+
+      await page.evaluate(async s2 => { await window.APP.setArchived(s2, false); }, sid);
+      const after3 = await page.evaluate(() => ({
+        nets: [...window.APP.D.moneyByPerson.entries()].sort().map(([k, v]) => k + ':' + v).join(','),
+        nights: window.APP.D.roundsOfNight.size,
+        rows: window.APP.state.money.length,
+      }));
+      ok('and bringing it back restores the totals exactly', after3.nets === before3.nets,
+         `${before3.nets} -> ${after3.nets}`);
+      ok('every night', after3.nights === before3.nights);
+      ok('and every row', after3.rows === before3.rows);
+    }
+  }
+
   section('The archive');
   await goTo(page, 'archive');
   ok('it is listed in the archive',
