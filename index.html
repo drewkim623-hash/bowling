@@ -424,7 +424,7 @@ body.focus .tabs{padding-top:calc(8px + env(safe-area-inset-top))}
 <div class="wrap">
   <header class="hero">
     <h1>Avengers Bowling</h1>
-    <p class="tagline">The record book. Everyone logs their own scores. Every change is on the record.</p>
+    <p class="tagline">The record book. Keep the money and it keeps the rest — who won, who paid, and who you win with.</p>
   </header>
   <main id="panel" role="tabpanel"></main>
 </div>
@@ -909,6 +909,26 @@ function powerScore(st){
   };
 }
 
+/* Where you finished, not just whether you were up.
+
+   A win is a win in the record, but +$10 and +$5 in the same game are not the
+   same afternoon — one of them came first and the other came second. This
+   scores each game from 1 down to 0 by which side you were on: top side 1,
+   bottom side 0, everybody else spread evenly between.
+
+   In an ordinary two-sided game it gives exactly 1 and 0, so it agrees with
+   the win-loss column and only starts saying anything extra when a game had
+   more than two sides. Sitting a game out is not a result and scores nothing
+   at all — you get no entry, rather than a nought that would drag you down. */
+function placeScores(out){
+  const sides = out.teams.length;
+  if (!sides) return [];
+  return out.teams.flatMap((t, i) => t.players.map(key => ({
+    key, rank: i + 1, of: sides, cents: t.cents,
+    score: sides === 1 ? 1 : (sides - 1 - i) / (sides - 1),
+  })));
+}
+
 /* Power, off the money.
 
    The pins ranking below needs scores, so it is empty for anybody who does not
@@ -930,10 +950,15 @@ function powerScore(st){
    real run shows up by the third or fourth week. */
 const PRIOR = 6;
 const MONEY_POWER_PARTS = [
-  ['How often you win', 5, r => {
+  ['Where you finish', 5, r => {
     const played = r.won + r.lost;
-    return played ? (r.won + PRIOR / 2) / (played + PRIOR) : null;
-  }, 'games won, pulled toward even until you have played enough to prove it'],
+    if (!played) return null;
+    /* rating, not the raw win column: winning a four-way outright should be
+       worth more than scraping second in the same game. Then pulled toward
+       even until somebody has played enough to have proved anything. */
+    const got = (r.rating != null ? r.rating / 100 : (r.won / played)) * played;
+    return (got + PRIOR / 2) / (played + PRIOR);
+  }, 'where you finish in each game, pulled toward even until you have played enough'],
   ['How much you take', 3, r => {
     const played = r.won + r.lost;
     if (!played) return null;
@@ -981,7 +1006,16 @@ function teamsFromMoney(cells){
   }
   /* biggest win first, biggest loss last, so A is always the side that took it */
   const teams = [...by.entries()].sort((a, b) => b[0] - a[0])
-    .map(([cents, players], i) => ({ letter: 'ABCD'[i] || '·', cents, players, won: cents > 0 }));
+    .map(([cents, players], i) => ({
+      letter: 'ABCD'[i] || '·', cents, players, won: cents > 0,
+      /* Who beat whom is certain — the sign says it. Who was PARTNERED with
+         whom is not. Four people on the same number might be a four-man team,
+         or two pairs who both happened to win the same amount, and the ledger
+         cannot tell them apart. Two and three are ordinary team sizes and get
+         believed; anything bigger is more likely a coincidence than a line-up,
+         and crediting it would invent six partnerships out of one game. */
+      partnership: players.length === 2 || players.length === 3,
+    }));
   const balance = cells.reduce((s, c) => s + c.cents, 0);
   const flat = f => teams.filter(f).reduce((a, t) => a.concat(t.players), []);
   return {
@@ -1101,7 +1135,7 @@ window.BOWL = {
   ordered, counts, fell, leaveMask, scoreCounts, scoreRolls, deckState, validateRolls,
   possibleScores, isPossibleScore, witness,
   isSplit, leaveName, gameStats, mergeStats,
-  pct, mean, stdev, handicap, commonLeaves, settle, settleUp, teamsFromMoney, writeUp,
+  pct, mean, stdev, handicap, commonLeaves, settle, settleUp, teamsFromMoney, placeScores, writeUp,
   moneyPower, MONEY_POWER_PARTS,
   band, powerScore, POWER_PARTS,
 };
@@ -1649,15 +1683,21 @@ function derive(){
   D.recordOf = new Map();
   const reachFor = key => {
     if (!D.recordOf.has(key))
-      D.recordOf.set(key, { key, won:0, lost:0, nights:new Set(), mates:new Map() });
+      D.recordOf.set(key, { key, won:0, lost:0, points:0, scored:0,
+                            nights:new Set(), mates:new Map() });
     return D.recordOf.get(key);
   };
   for (const r of D.moneyRounds){
+    const place = new Map(B.placeScores(r).map(p => [p.key, p]));
     for (const t of r.teams){
       for (const key of t.players){
         const p = reachFor(key);
         p.nights.add(r.session_id);
         if (t.won) p.won++; else p.lost++;
+        const sc = place.get(key);
+        if (sc){ p.points += sc.score; p.scored++; }
+        /* only where the money actually says who was with whom */
+        if (!t.partnership) continue;
         for (const mate of t.players){
           if (mate === key) continue;
           const m = p.mates.get(mate) || { n:0, won:0 };
@@ -1798,7 +1838,7 @@ function moneyPairs(minGames = 3){
   const map = new Map();
   for (const r of D.moneyRounds){
     for (const t of r.teams){
-      if (t.players.length < 2) continue;
+      if (!t.partnership) continue;      // the money does not say they were together
       const side = [...t.players].sort();
       for (let i = 0; i < side.length; i++)
         for (let j = i + 1; j < side.length; j++){
@@ -3095,10 +3135,97 @@ function tabHome(){
   if (state.staleSchema) box.append(staleSchemaCard());
   if (state.user && !profileComplete(state.me)) box.append(profileSetup());
 
+  /* ---- what the book actually knows -----------------------------------
+     Scores are the thing nobody logs, so leading on them meant leading on an
+     empty page. Everything above the rule is off the money, which always gets
+     kept; the bowling is still here, underneath, for whoever logs it. */
+  const standings = everyPersonKey().map(moneyRecord).filter(r => r.played > 0)
+    .sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1) || b.net - a.net);
+  const last = lastNight();
+  const openNight = D.sessions.find(x => !x.finished_at && (D.roundsOfNight.get(x.id) || []).length);
+  const mine = state.user ? standings.find(r => r.key === keyOfProfile(state.user.id)) : null;
+
+  if (openNight){
+    box.append(sectionHead('Still going', 'Nobody has finished this one off.'));
+    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' },
+      onclick(){ openMoneyNight(openNight.id); } },
+      h('div.spread', {},
+        h('div', {}, h('div', { style:{ fontWeight:700 } }, dateLabel(openNight.played_on)),
+          h('div.tiny.muted', {}, `${openNight.house} · `
+            + `${(D.roundsOfNight.get(openNight.id) || []).length} games so far`)),
+        h('span.chip.on', {}, 'Pick it back up'))));
+  }
+
+  if (standings.length){
+    const moved = state.money.filter(m => m.amount_cents > 0)
+      .reduce((a, m) => a + m.amount_cents, 0);
+    box.append(tiles([
+      tile('Top of the book', standings[0].name,
+        `${wl(standings[0])} · ${money(standings[0].net)}`),
+      mine ? tile('You', money(mine.net), `${wl(mine)} · rating ${Math.round(mine.rating)}`)
+           : tile('Playing', int(standings.length), 'people in the book'),
+      tile('Nights', int(D.roundsOfNight.size), 'with money on them'),
+      tile('Changed hands', moneyFlat(moved), 'all time'),
+    ]));
+  }
+
+  if (last){
+    const up = writeUpOf(last);
+    const tally = nightTallyOf(last.id);
+    box.append(sectionHead(last === openNight ? 'So far tonight' : 'Last time out',
+      `${dateLabel(last.played_on)} · ${last.house}`));
+    box.append(h('button.card.tap', { style:{ display:'block', width:'100%', textAlign:'left' },
+      onclick(){ openMoneyNight(last.id); } },
+      up ? h('div', { style:{ fontSize:'18px', fontWeight:780, letterSpacing:'-.02em' } },
+              up.headline) : null,
+      h('div.moneystrip', { style:{ marginTop:'10px' } },
+        tally.map(t => h('span.chip', {}, personName(t.key), ' ', moneyPill(t.net)))),
+      h('div.tiny.muted', { style:{ marginTop:'8px' } },
+        `${(D.roundsOfNight.get(last.id) || []).length} games · tap for the whole book`)));
+  }
+
+  if (standings.length){
+    box.append(sectionHead('Where everybody stands',
+      'Off the money. Rating is where you finish, so winning a four-way outright beats scraping second in it.'));
+    box.append(h('div.card', {}, standings.map(r => {
+      const played2 = r.won + r.lost;
+      return h('div.recrow', {},
+        h('div', {}, h('div', { style:{ fontWeight:650 } }, r.name,
+            r.guest ? h('span.tiny.muted', {}, ' guest') : null),
+          h('div.tiny.muted', {}, `${r.nights} night${r.nights === 1 ? '' : 's'}`
+            + (r.rating != null ? ` · rating ${Math.round(r.rating)}` : ''))),
+        h('div.wbar', {}, h('i', { style:{ width: (played2 ? (r.won / played2) * 100 : 0) + '%' } })),
+        h('div.wl', {}, wl(r)),
+        moneyPill(r.net));
+    })));
+  } else {
+    box.append(h('p.empty', {}, 'Nothing in the book yet. Keep one night and this whole page fills in.'));
+  }
+  box.append(h('button.btn.pri.wide.big', { style:{ marginTop:'12px' },
+    onclick(){ go('tonight'); } }, '💵  Start a night'));
+
+  /* ---- and below the rule, the bowling ---- */
   const all = [...D.stats.values()];
   const played = all.filter(s2 => s2.games > 0);
   const allScores = D.games.map(g => g.total_score);
   const best = D.games.reduce((a,g) => !a || g.total_score > a.total_score ? g : a, null);
+
+  /* With nothing logged, everything below is five cards in a row saying there
+     is nothing to show. One line is more honest and takes up less of the page. */
+  if (!D.games.length){
+    box.append(sectionHead('The bowling', 'Nobody has logged a score.'));
+    box.append(h('div.card', {},
+      h('p.small.ink2', {}, 'Averages, spares, strikes and the trophy case all need '
+        + 'scores, and none of them are needed to keep a night \u2014 everything above '
+        + 'runs off the money. If anybody ever does start logging, it appears here.'),
+      h('button.btn.sm', { style:{ marginTop:'12px' }, onclick(){ go('log'); } },
+        'Log one anyway')));
+    box.append(glossary(MONEY_GLOSS));
+    return box;
+  }
+
+  box.append(sectionHead('The bowling',
+    'Pins, for whoever logs them. None of it is needed to keep a night.'));
 
   if (D.leader){
     box.append(h('div.champ', {},
@@ -3117,8 +3244,6 @@ function tabHome(){
       best ? `${D.profile.get(best.profile_id)?.display_name || '?'} · ${shortDate(best.played_on)}` : 'nothing yet'),
     tile('Sessions', int(D.sessions.length), 'nights out'),
   ]));
-
-  box.append(h('button.btn.pri.wide.big', { onclick(){ go('log'); } }, '＋  Log a session'));
 
   box.append(sectionHead('Everyone', 'Tap anyone to see everything about them.'));
   box.append(h('div.people', {}, all.length
@@ -3551,7 +3676,7 @@ function moneyRecord(key){
   const net = D.moneyByPerson.get(key) || 0;
   const base = { key, name: personName(key), guest: personIsGuest(key),
                  profile: personIsGuest(key) ? null : D.profile.get(key.slice(2)), net };
-  if (!r) return { ...base, won:0, lost:0, played:0, winPct:null, nights:0, mates:[] };
+  if (!r) return { ...base, won:0, lost:0, played:0, winPct:null, rating:null, nights:0, mates:[] };
   const played = r.won + r.lost;
   const mates = [...r.mates.entries()]
     .map(([k, m]) => ({ key:k, name: personName(k), n:m.n, won:m.won,
@@ -3559,10 +3684,47 @@ function moneyRecord(key){
     .sort((a,b) => b.n - a.n);
   return { ...base, won:r.won, lost:r.lost, played,
            winPct: played ? (r.won / played) * 100 : null,
+           /* where you finished, averaged. Identical to win % on a night of
+              straight two-sided games, and pulls apart from it the moment
+              somebody wins a four-way by more than somebody else. */
+           rating: r.scored ? (r.points / r.scored) * 100 : null,
            nights: r.nights.size, mates,
            best: mates.filter(m => m.n >= 3).sort((a,b) => b.winPct - a.winPct)[0] || null,
            worst: mates.filter(m => m.n >= 3).sort((a,b) => a.winPct - b.winPct)[0] || null };
 }
+/* One night, added up: who won what and who ended where. The ledger works out
+   the same thing from what you are typing right now; this is for every night
+   that is already written down. */
+function nightTallyOf(sid){
+  const tally = new Map();
+  for (const r of (D.roundsOfNight.get(sid) || []))
+    for (const t of r.teams) for (const key of t.players){
+      const e = tally.get(key) || { key, won:0, lost:0, net:0 };
+      if (t.won) e.won++; else e.lost++;
+      tally.set(key, e);
+    }
+  for (const m of (D.moneyBySession.get(sid) || [])){
+    const e = tally.get(personKey(m));
+    if (e) e.net += m.amount_cents;
+  }
+  return [...tally.values()].sort((a, b) => b.net - a.net);
+}
+function writeUpOf(ses){
+  const tally = nightTallyOf(ses.id);
+  if (!tally.length) return null;
+  return B.writeUp({
+    played_on: ses.played_on, house: ses.house, title: ses.title,
+    totals: tally.map(t => ({ ...t, name: personName(t.key) })),
+    rounds: (D.roundsOfNight.get(ses.id) || []).map(r => ({ ...r,
+      teams: r.teams.map(t => ({ ...t, players: t.players.map(personName) })) })),
+    goingIn: formGoingIn(ses.id, tally.map(t => t.key)),
+  });
+}
+/* The most recent night that has money on it — the one you would want back. */
+function lastNight(){
+  return D.sessions.find(x => (D.roundsOfNight.get(x.id) || []).length) || null;
+}
+
 /* Everybody the book knows about, accounts and guests alike. */
 function everyPersonKey(){
   return [...new Set([
@@ -3733,6 +3895,13 @@ function sidesLine(out){
               h('b', {}, nameList(out.losers)), ' paid for it');
   }
   if (out.sat.length) el.append(` \u00b7 ${nameList(out.sat)} sat out`);
+  /* Be honest about the limit of the trick rather than quietly inventing
+     line-ups: four people on one number might be a four, or two pairs. */
+  const vague = out.teams.filter(t => !t.partnership && t.players.length > 3);
+  if (vague.length)
+    el.append(h('div', { style:{ marginTop:'4px', opacity:'.75' } },
+      `Too many on one number to say who was paired with whom, so this game `
+      + `counts for the record but not for pairings.`));
   return el;
 }
 
@@ -4584,6 +4753,7 @@ function tabPower(){
         { key:'power', label:'Power', value:r => r.score, fmt:v => Math.round(v) },
         { key:'wl', label:'Record', text:true, value:r => wl(r) },
         { key:'pct', label:'Win %', value:r => r.winPct, fmt:pc },
+        { key:'rating', label:'Rating', value:r => r.rating, fmt:v => v == null ? '—' : Math.round(v) },
         { key:'played', label:'Games', value:r => r.played },
         { key:'nights', label:'Nights', value:r => r.nights },
         { key:'money', label:'Money', value:r => r.net, fmt:v => money(v) },
@@ -4870,17 +5040,22 @@ function tabRecords(){
    ====================================================================== */
 function tabTeams(){
   const box = h('div', {});
-  const pairs = moneyPairs(3);
+  const pairs = moneyPairs(2);
   box.append(sectionHead('Who you win with',
-    'The line-up changes every game, so there is no rivalry grid. Two people at the same number were on the same side — that is all this needs. Three games together to appear.'));
+    'Two people at the same number in the same game were on the same side, so this needs no scores and no team ever typed in. Two games together to appear.'));
   if (!pairs.length){
-    box.append(h('p.empty', {}, 'No two people have been on the same side three times yet.'));
+    box.append(h('p.empty', {}, 'No two people have been on the same side twice yet.'));
   } else {
+    const most = [...pairs].sort((a, b) => b.n - a.n)[0];
+    /* with three pairs you have not got a best and a worst, you have got three
+       numbers — so only claim one once there is a field to be top of */
+    const enough = pairs.length >= 4;
     box.append(tiles([
-      tile('Best pairing', `${pairs[0].nameA} + ${pairs[0].nameB}`,
-        `${pc(pairs[0].together)} together, ${pairs[0].n} games`),
-      tile('Worst pairing', `${pairs[pairs.length-1].nameA} + ${pairs[pairs.length-1].nameB}`,
-        `${pc(pairs[pairs.length-1].together)} together, ${pairs[pairs.length-1].n} games`),
+      tile('Most often together', `${most.nameA} + ${most.nameB}`,
+        `${most.n} games, ${most.nights} night${most.nights === 1 ? '' : 's'}`),
+      enough ? tile('Best pairing', `${pairs[0].nameA} + ${pairs[0].nameB}`,
+                 `${pc(pairs[0].together)} together, ${pairs[0].n} games`)
+             : tile('Pairings so far', int(pairs.length), 'two games together or more'),
     ], 'two'));
     box.append(card(divergingBars(pairs.filter(p => p.delta != null).map(p => ({
       label: `${p.nameA}+${p.nameB}`, value: p.delta,
@@ -4918,6 +5093,7 @@ function tabTeams(){
       { key:'won', label:'Won', value:r => r.won },
       { key:'lost', label:'Lost', value:r => r.lost },
       { key:'pct', label:'Win %', value:r => r.winPct, fmt:pc },
+      { key:'rating', label:'Rating', value:r => r.rating, fmt:v => v == null ? '—' : Math.round(v) },
       { key:'nights', label:'Nights', value:r => r.nights },
       { key:'money', label:'Money', value:r => r.net, fmt:v => money(v) },
       { key:'most', label:'Most with', text:true, value:r => r.mates[0]?.name || '—' },

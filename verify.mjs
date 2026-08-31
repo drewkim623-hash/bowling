@@ -340,6 +340,65 @@ section('Power off the money');
   ok('and the parts say what they are', hot.parts.every(x => x.label && x.blurb));
 }
 
+section('What the money cannot tell you');
+{
+  const C = o => Object.entries(o).map(([key, cents]) => ({ key, cents }));
+
+  /* Four people at the same number could be one team of four, or two pairs who
+     both happened to win the same amount. The money does not say which, so the
+     sides are still read — but nobody is credited as anybody's partner. */
+  const big = B.teamsFromMoney(C({ a:500, b:500, c:500, d:500, e:-1000, f:-1000 }));
+  eq('a big side is still one side for the record', big.teams[0].players.length, 4);
+  ok('everyone on it still won', big.winners.length === 4);
+  ok('but it is not treated as a partnership', !big.teams[0].partnership);
+  ok('while the pair on the other side is', big.teams[1].partnership);
+
+  const pair = B.teamsFromMoney(C({ a:500, b:500, c:-500, d:-500 }));
+  ok('a straight two a side is a partnership both ways',
+     pair.teams.every(t => t.partnership));
+
+  const three = B.teamsFromMoney(C({ a:500, b:500, c:500, d:-500, e:-500, f:-500 }));
+  ok('so is a three a side', three.teams.every(t => t.partnership));
+
+  const solo = B.teamsFromMoney(C({ a:1000, b:-250, c:-250, d:-250, e:-250 }));
+  ok('one against the room beat all four of them', solo.winners.join() === 'a');
+  ok('but those four were not playing together', !solo.teams[1].partnership);
+  ok('and one person alone is nobody\u2019s partner', !solo.teams[0].partnership);
+}
+
+section('Where you finished, not just whether you were up');
+{
+  const C = o => Object.entries(o).map(([key, cents]) => ({ key, cents }));
+  const score = o => {
+    const out = B.teamsFromMoney(C(o));
+    return Object.fromEntries(B.placeScores(out).map(p => [p.key, p.score]));
+  };
+
+  /* the whole point: +10 and +5 are both wins, and they are not the same win */
+  const free = score({ a:1000, b:500, c:-500, d:-1000 });
+  eq('winning the most scores full marks', free.a, 1);
+  ok('winning less scores less', free.b < 1 && free.b > free.c);
+  ok('losing less scores more than losing most', free.c > free.d);
+  eq('and finishing last scores nothing', free.d, 0);
+
+  /* and it must not disturb the ordinary case */
+  const twoUp = score({ a:500, b:500, c:-500, d:-500 });
+  eq('two a side is still just won', twoUp.a, 1);
+  eq('or lost', twoUp.c, 0);
+  eq('both winners score the same', twoUp.a, twoUp.b);
+
+  const three = score({ a:1000, b:0, c:-1000 });
+  eq('the middle of three is halfway', three.b === undefined ? null : three.b, null);
+
+  const mid = score({ a:1000, b:500, c:-1500 });
+  eq('three sides: top', mid.a, 1);
+  eq('middle', mid.b, 0.5);
+  eq('bottom', mid.c, 0);
+
+  const sat = B.placeScores(B.teamsFromMoney(C({ a:500, b:-500, c:0 })));
+  ok('sitting out is not a result at all', !sat.some(p => p.key === 'c'));
+}
+
 section('Writing the night up');
 {
   const T = (name, won, lost, net) => ({ key:name, name, won, lost, net });
@@ -542,7 +601,13 @@ async function browserTests(){
     return { name:p.display_name, n:gs.length, avg: gs.reduce((s,g) => s + g.total_score, 0) / (gs.length || 1) };
   }).filter(p => p.n >= 6).sort((a,b) => b.avg - a.avg)[0];
   ok(`the gold banner shows the actual leader (${want.name})`, leader.includes(want.name), leader.replace(/\n/g, ' | '));
-  ok('the highest game ever is on a tile', (await page.locator('.tiles').first().innerText()).includes('300'));
+  /* home leads on the money now, so the pins tiles are the second group */
+  ok('home leads with the book, not with pins',
+     /top of the book|nothing in the book/i.test(await page.locator('#panel').innerText()));
+  ok('everybody stands somewhere, off the money',
+     /where everybody stands|nothing in the book/i.test(await page.locator('#panel').innerText()));
+  ok('the highest game ever is still on a tile, further down',
+     (await page.locator('.tiles').allInnerTexts()).some(t => t.includes('300')));
   ok('the leaderboard is sorted by average to start',
      (await page.locator('#panel .rcard').first().innerText()).includes(want.name));
   ok('people short of six games get their own group',
