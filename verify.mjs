@@ -1123,6 +1123,38 @@ async function browserTests(){
     }
   }
 
+  section('A night you can read at a glance');
+  await goTo(page, 'sessions');
+  {
+    const card = page.locator('#panel .nightcard').first();
+    if (await card.count()){
+      const txt = await card.innerText();
+      ok('a night leads with what happened, not with a date alone',
+         txt.split('\n').filter(Boolean).length >= 4, txt.replace(/\n/g, ' | '));
+      ok('it names who came out on top', /up the most/i.test(txt));
+      ok('and who paid for it', /down the most/i.test(txt));
+      /* the bug this replaced: a row of names that ran off the side */
+      ok('and everybody fits without scrolling sideways',
+         await card.locator('.everyone').evaluate(el => el.scrollWidth <= el.clientWidth + 1));
+      ok('it still opens the session sheet from here, not the money ledger',
+         await (async () => {
+           await card.click();
+           await page.waitForSelector('.sheet .inner', { timeout:4000 });
+           const inner = await page.locator('.sheet .inner').innerText();
+           await page.locator('.sheet .closebtn').click();
+           await page.waitForTimeout(200);
+           return inner.length > 0;
+         })());
+    }
+  }
+  await goTo(page, 'home');
+  {
+    const card = page.locator('#panel .nightcard').first();
+    if (await card.count())
+      ok('and the last night out is the same card on Home',
+         /up the most/i.test(await card.innerText()));
+  }
+
   section('The archive');
   await goTo(page, 'archive');
   ok('it is listed in the archive',

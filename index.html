@@ -336,6 +336,19 @@ input:focus,select:focus{border-color:var(--blue)}
 .quickamt button:hover{background:var(--hover)}
 .quickamt button.on{border-color:var(--blue);background:rgba(57,135,229,.2);color:#a8cbf5}
 .quickamt button.zero{color:var(--muted)}
+/* One night, readable without leaning in. The headline is the point; the two
+   ends of the night are the numbers people actually want. */
+.nightcard{display:block;width:100%;text-align:left}
+.nightcard .when{font-size:11px;font-weight:750;letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.nightcard .head{margin-top:6px;font-size:19px;font-weight:800;letter-spacing:-.03em;line-height:1.2}
+.ends{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:13px}
+.ends .end{background:var(--raised);border:1px solid var(--ring);border-radius:13px;padding:11px 12px;min-width:0}
+.ends .lab{font-size:10px;font-weight:750;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.ends .nm{margin-top:5px;font-size:15px;font-weight:730;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ends .v{margin-top:2px;font-size:22px;font-weight:820;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.ends .v.up{color:var(--plus)} .ends .v.dn{color:var(--red)}
+.everyone{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}
+.everyone .chip{padding:5px 9px;font-size:12px;gap:5px}
 .recrow{display:grid;grid-template-columns:1fr 70px auto auto;gap:12px;align-items:center;
   padding:11px 0;border-bottom:1px solid var(--grid)}
 .recrow:last-child{border-bottom:0}
@@ -3272,18 +3285,9 @@ function tabHome(){
   }
 
   if (last){
-    const up = writeUpOf(last);
-    const tally = nightTallyOf(last.id);
     box.append(sectionHead(last === openNight ? 'So far tonight' : 'Last time out',
-      `${dateLabel(last.played_on)} · ${last.house}`));
-    box.append(h('button.card.tap', { style:{ display:'block', width:'100%', textAlign:'left' },
-      onclick(){ openMoneyNight(last.id); } },
-      up ? h('div', { style:{ fontSize:'18px', fontWeight:780, letterSpacing:'-.02em' } },
-              up.headline) : null,
-      h('div.moneystrip', { style:{ marginTop:'10px' } },
-        tally.map(t => h('span.chip', {}, personName(t.key), ' ', moneyPill(t.net)))),
-      h('div.tiny.muted', { style:{ marginTop:'8px' } },
-        `${(D.roundsOfNight.get(last.id) || []).length} games · tap for the whole book`)));
+      'Tap it for the whole book.'));
+    box.append(moneyNightCard(last));
   }
 
   if (standings.length){
@@ -3709,7 +3713,8 @@ function showSession(id){
 }
 function tabSessions(){
   const box = h('div', {});
-  box.append(sectionHead('Sessions', 'Every night out, newest first.'));
+  box.append(sectionHead('Sessions',
+    'Every night out, newest first. Tap one to open its book.'));
   const houses = [...new Set(D.sessions.map(s2 => s2.house))];
   const years = [...new Set(D.sessions.map(s2 => yearOf(s2.played_on)))].sort((a,b) => b - a);
   const filter = { house:'', year:'' };
@@ -3725,6 +3730,15 @@ function tabSessions(){
       (!filter.house || s2.house === filter.house) && (!filter.year || String(yearOf(s2.played_on)) === filter.year));
     if (!rows.length){ list.append(h('p.empty', {}, 'No sessions match that.')); return; }
     for (const s2 of rows){
+      /* A night with money on it gets the money card — the headline, the two
+         ends of it, everybody's take. Only a night that was actually scored
+         falls back to the pins, because for most nights there are none. */
+      if ((D.roundsOfNight.get(s2.id) || []).length){
+        /* on this tab a night opens its own sheet — the one with the line-up,
+           the MVP and the commissioner's controls — not the money ledger */
+        list.append(moneyNightCard(s2, { onclick(){ showSession(s2.id); } }));
+        continue;
+      }
       list.append(h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ showSession(s2.id); } },
         h('div.spread', {},
           h('div', {},
@@ -3823,6 +3837,35 @@ function writeUpOf(ses){
     goingIn: formGoingIn(ses.id, tally.map(t => t.key)),
   });
 }
+/* One night as a card. Home shows the last one, Sessions shows all of them,
+   and neither needs a score to have been logged. */
+function moneyNightCard(ses, { onclick } = {}){
+  const tally = nightTallyOf(ses.id);
+  const games = (D.roundsOfNight.get(ses.id) || []).length;
+  const up = tally[0], down = tally[tally.length - 1];
+  const story = writeUpOf(ses);
+  return h('button.card.tap.nightcard', { onclick: onclick || (() => openMoneyNight(ses.id)) },
+    h('div.spread', {},
+      h('div.when', {}, dateLabel(ses.played_on)),
+      h('span.chip', { cls: ses.finished_at ? 'on' : '' },
+        ses.finished_at ? 'finished' : `${games} game${games === 1 ? '' : 's'}`)),
+    h('div.head', {}, story ? story.headline : `${ses.house}`),
+    h('div.tiny.muted', { style:{ marginTop:'4px' } },
+      `${ses.house}${ses.title ? ' · ' + ses.title : ''}`),
+    /* the two ends of the night, which is what anybody asks about first */
+    (up && down && up !== down) ? h('div.ends', {},
+      h('div.end', {}, h('div.lab', {}, 'Up the most'),
+        h('div.nm', {}, personName(up.key)),
+        h('div.v.up', {}, money(up.net))),
+      h('div.end', {}, h('div.lab', {}, 'Down the most'),
+        h('div.nm', {}, personName(down.key)),
+        h('div.v.dn', {}, money(down.net)))) : null,
+    /* and then everybody, wrapped so nobody falls off the side */
+    h('div.everyone', {}, tally.map(t =>
+      h('span.chip', {}, personName(t.key), ' ', moneyPill(t.net), ' ',
+        h('span.tiny.muted', {}, wl(t))))));
+}
+
 /* The most recent night that has money on it — the one you would want back. */
 function lastNight(){
   return D.sessions.find(x => (D.roundsOfNight.get(x.id) || []).length) || null;
@@ -5567,7 +5610,7 @@ const STATS_PAGES = [
   ['power',    '\u26a1', 'Power rankings', 'Who is actually winning, off the book'],
   ['teams',    '\u{1f91d}', 'Teams',          'Who you win with, read off the money'],
   ['records',  '\u{1f3c6}', 'Records',        'The money records, and the trophy case'],
-  ['sessions', '\u{1f4c5}', 'Every night',    'One card each, all the way back'],
+  ['sessions', '\u{1f4c5}', 'Sessions',       'Every night out, one card each, all the way back'],
   ['log',      '\u270f\ufe0f', 'Log a session',  'Score it live, or type one up after'],
   ['archive',  '\u{1f4e6}', 'Archive',        'Nights you put away, and can bring back'],
 ];
