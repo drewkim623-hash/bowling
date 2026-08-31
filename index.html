@@ -3697,11 +3697,20 @@ function showSession(id){
       }
     }
     if (state.user && (ses.created_by === state.user.id || isBoss())){
-      body.append(h('button.btn.wide.danger', { style:{ marginTop:'14px' }, async onclick(){
-        if (!confirm(`Delete the whole session of ${dateLabel(ses.played_on)}, and all ${ses.games.length} games in it?`)) return;
-        try { await db.deleteSession(ses.id); await load(); closeSheet(); toast('Session deleted'); render(); }
-        catch (err){ toast('Could not delete: ' + (err.message || err)); }
-      } }, isBoss() && ses.created_by !== state.user.id ? 'Delete this session (commissioner)' : 'Delete this session'));
+      /* Same as everywhere else: out of the book, not out of existence. The
+         one button on the site that actually destroys a night lives in the
+         archive, and nowhere else. */
+      body.append(h('button.btn.wide', { style:{ marginTop:'14px' }, async onclick(){
+        if (!confirm(`Put the night of ${dateLabel(ses.played_on)} away?`
+          + '\n\nIt comes out of the book and out of everybody\u2019s totals. '
+          + 'Nothing is destroyed \u2014 you can bring it back from the archive.')) return;
+        try {
+          await setArchived(ses.id, true);
+          closeSheet(); toast('Put away. It is in the archive.'); render();
+        } catch (err){ toast(saveError(err)); }
+      } }, isBoss() && ses.created_by !== state.user.id
+        ? '\u{1f4e6}  Put this night away (commissioner)'
+        : '\u{1f4e6}  Put this night away'));
     }
     body.append(glossary([
       ['Series', 'Every game one person bowled that night, added up.'],

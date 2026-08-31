@@ -813,8 +813,10 @@ async function browserTests(){
   await goTo(page, 'sessions');
   await page.locator('#panel .card', { hasText:'Mar' }).first().click();
   await page.waitForSelector('.sheet .inner');
-  ok('the commissioner can delete a session they did not create',
-     /delete this session/i.test(await page.locator('.sheet .inner').innerText()));
+  ok('the commissioner can put away a session they did not create',
+     /put this night away/i.test(await page.locator('.sheet .inner').innerText()));
+  ok('and is not offered a way to destroy it from here',
+     !/delete this session/i.test(await page.locator('.sheet .inner').innerText()));
   await page.locator('.sheet .closebtn').click();
   await goTo(page, 'home');
   await page.locator('.feed.tap', { hasText:'Tony' }).first().click();
@@ -1154,6 +1156,41 @@ async function browserTests(){
       ok('and the last night out is the same card on Home',
          /up the most/i.test(await card.innerText()));
   }
+
+  section('Nothing else destroys a night');
+  {
+    /* Three buttons used to delete a night outright and I changed two of them.
+       This is the check that a fourth does not appear: the only control that
+       destroys anything lives in the archive. */
+    /* the same order the tab shows them in — newest first — or this clicks
+       one night and checks another */
+    await goTo(page, 'sessions');
+    const sid = await page.evaluate(() => window.APP.D.sessions.find(
+      x => (window.APP.D.roundsOfNight.get(x.id) || []).length)?.id);
+    if (sid){
+      await page.locator('#panel .nightcard').first().click();
+      await page.waitForSelector('.sheet .inner');
+      const away = page.locator('.sheet button', { hasText:'Put this night away' });
+      if (await away.count()){
+        await away.click();
+        await page.waitForTimeout(500);
+        ok('deleting from the session sheet puts it in the archive',
+           await page.evaluate(s2 => !window.APP.state.sessions.some(x => x.id === s2), sid));
+        ok('rather than destroying it',
+           await page.evaluate(s2 => window.APP.state.all.sessions.some(x => x.id === s2), sid));
+        await goTo(page, 'archive');
+        ok('and it is waiting in the archive',
+           await page.locator('#panel button', { hasText:'Bring it back' }).count() >= 1);
+        await page.locator('#panel button', { hasText:'Bring it back' }).first().click();
+        await page.waitForTimeout(400);
+        ok('from where it comes straight back',
+           await page.evaluate(s2 => window.APP.state.sessions.some(x => x.id === s2), sid));
+      } else {
+        await page.locator('.sheet .closebtn').click();
+      }
+    }
+  }
+  await goTo(page, 'home');
 
   section('The archive');
   await goTo(page, 'archive');
