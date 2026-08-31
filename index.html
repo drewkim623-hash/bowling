@@ -306,9 +306,25 @@ input:focus,select:focus{border-color:var(--blue)}
 .teamcyc[data-t="C"]{background:rgba(201,133,0,.26);border-color:rgba(201,133,0,.6);color:#e2b45c}
 .teamcyc[data-t="D"]{background:rgba(144,133,233,.26);border-color:rgba(144,133,233,.6);color:#c0b8f4}
 .moneystrip{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:8px 0}
-.moneystrip.stick{position:sticky;top:61px;z-index:30;margin:0 calc(-1*var(--pad)) 8px;
-  padding:9px var(--pad);background:rgba(11,11,15,.93);backdrop-filter:saturate(140%) blur(10px);
-  border-bottom:1px solid var(--ring)}
+/* Somebody always asks who is up. A row that scrolls sideways answers that for
+   the first two people and hides the rest, so this one wraps: everybody on
+   screen, no scrolling, stuck to the top of the page while you type. */
+.moneystrip.stick{position:sticky;top:0;z-index:30;margin:0 calc(-1*var(--pad)) 10px;
+  padding:9px var(--pad);background:rgba(11,11,15,.96);backdrop-filter:saturate(140%) blur(10px);
+  border-bottom:1px solid var(--ring);
+  flex-wrap:wrap;gap:5px;overflow:visible;cursor:pointer}
+.moneystrip.stick .chip{padding:5px 9px;font-size:12.5px;gap:5px}
+.whoup{display:flex;align-items:center;gap:6px;width:100%;margin-bottom:2px;
+  font-size:9.5px;font-weight:750;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.whoup .more{margin-left:auto;color:var(--blue);letter-spacing:.06em}
+/* the big read-it-out-loud version */
+.bigup{display:grid;grid-template-columns:1fr auto;gap:10px 14px;align-items:center;margin-top:4px}
+.bigup .row{display:flex;align-items:center;gap:9px;min-width:0}
+.bigup .nm{font-size:22px;font-weight:750;letter-spacing:-.02em}
+.bigup .amt{font-size:26px;font-weight:820;letter-spacing:-.03em;text-align:right;
+  font-variant-numeric:tabular-nums}
+.bigup .up{color:var(--plus)} .bigup .dn{color:var(--red)} .bigup .lv{color:var(--muted)}
+.bigup .sep{grid-column:1/-1;height:1px;background:var(--grid);margin:2px 0}
 .moneystrip::-webkit-scrollbar{display:none}
 .balwarn{font-size:11.5px;color:var(--hold);margin-top:8px}
 .recrow{display:grid;grid-template-columns:1fr 70px auto auto;gap:12px;align-items:center;
@@ -3922,34 +3938,83 @@ function moneyLedger(ses){
   const cell = (n, k) => draft.get(n + '|' + k) || 0;
   const totalFor = k => { let t = 0; for (let n = 1; n <= games; n++) t += cell(n, k); return t; };
 
-  const strip = h('div.moneystrip.stick', {});
+  /* Big enough to hold up and read off when somebody asks. */
+  function whosUp(){
+    const rows = [...keys].map(k => ({ k, t: totalFor(k) }))
+      .sort((a, b) => b.t - a.t);
+    openSheet('Who is up', body => {
+      const grid = h('div.bigup', {});
+      let crossed = false;
+      for (const r of rows){
+        /* one line between the people who are up and the people who are not */
+        if (!crossed && r.t < 0){ crossed = true; grid.append(h('div.sep', {})); }
+        grid.append(
+          h('div.row', {}, h('span.nm', {}, personName(r.k)),
+            /* taking somebody out of the night lives here rather than on the
+               strip: it is rare, it is not undoable, and the strip is now one
+               big tap target for reading the totals out */
+            h('button.rm', { style:{ width:'26px', height:'26px', fontSize:'13px' },
+              'aria-label': 'Remove ' + personName(r.k),
+              async onclick(e){
+                e.stopPropagation();
+                if (!confirm(`Take ${personName(r.k)} out of this night? `
+                  + 'Their lines for tonight go with them.')) return;
+                try {
+                  await removeFromNight(ses.id, r.k);
+                  keys = keys.filter(x => x !== r.k);
+                  for (let n = 1; n <= games; n++) draft.delete(n + '|' + r.k);
+                  closeSheet(); drawTotals(); drawGames();
+                } catch (err){ toast(saveError(err)); }
+              } }, '\u2715')),
+          h('div.amt', { cls: r.t > 0 ? 'up' : r.t < 0 ? 'dn' : 'lv' }, money(r.t)));
+      }
+      body.append(grid);
+      const off = rows.reduce((a, r) => a + r.t, 0);
+      if (off !== 0) body.append(h('p.tiny.gold', { style:{ marginTop:'14px' } },
+        `The book is off by ${money(off)} — somewhere a game does not add up to zero.`));
+    }, `${games} game${games === 1 ? '' : 's'} so far`);
+  }
+
+  const strip = h('div.moneystrip.stick', { role:'button', tabindex:'0',
+    'aria-label':'Who is up',
+    onclick(e){ if (!e.target.closest('.rm')) whosUp(); },
+    onkeydown(e){ if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); whosUp(); } } });
   let drawTotals = function(){
     clear(strip);
+    strip.append(h('div.whoup', {}, 'Who is up',
+      h('span.more', {}, 'tap for the big version')));
     for (const k of [...keys].sort((a,b) => totalFor(b) - totalFor(a))){
       const t = totalFor(k);
-      strip.append(h('span.chip', {}, personName(k), ' ', moneyPill(t),
-        h('button.rm', { style:{ width:'22px', height:'22px', fontSize:'12px', marginLeft:'2px' },
-          'aria-label': 'Remove ' + personName(k),
-          async onclick(e){
-            e.stopPropagation();
-            if (!confirm(`Take ${personName(k)} out of this night? Their lines for tonight go with them.`)) return;
-            try {
-              await removeFromNight(ses.id, k);
-              keys = keys.filter(x => x !== k);
-              for (let n = 1; n <= games; n++) draft.delete(n + '|' + k);
-              drawTotals(); drawGames();
-            } catch (err){ toast(saveError(err)); }
-          } }, '✕')));
+      strip.append(h('span.chip', {}, personName(k), ' ', moneyPill(t)));
     }
     const bal = keys.reduce((s, k) => s + totalFor(k), 0);
     if (bal !== 0) strip.append(h('span.chip', { style:{ borderColor:'rgba(201,133,0,.5)' } },
       h('span.tiny.gold', {}, `off by ${money(bal)}`)));
   };
   async function save(n){
+    pending.delete(n);
     const payload = keys.map(k => ({ ...personRow(k), amount_cents: cell(n, k) }));
     try { await db.saveSettlement(ses.id, n, payload); await load(); }
     catch (err){ toast(saveError(err)); }
   }
+  /* A number used to be written down when you tapped away from the box. That is
+     almost always immediately — but if you typed the last figure of the night
+     and locked your phone without tapping anything, it went nowhere. So it also
+     saves shortly after you stop typing, and again the moment the page is being
+     hidden, which is what a lock, an app switch or a close actually look like. */
+  const pending = new Set();
+  let typingTimer = null;
+  function saveSoon(n){
+    pending.add(n);
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => { for (const g of [...pending]) save(g); }, 700);
+  }
+  function flushNow(){
+    clearTimeout(typingTimer);
+    for (const g of [...pending]) save(g);
+  }
+  document.addEventListener('visibilitychange', flushNow);
+  window.addEventListener('pagehide', flushNow);
 
   function gameCard(n){
     const cardEl = h('div.card.gamecard', {});
@@ -4011,6 +4076,12 @@ function moneyLedger(ses){
         const t = sideOf(k);
         const input = h('input.n', { type:'number', step:'0.5',
           value: v ? (v / 100).toFixed(2).replace(/\.00$/, '') : '', placeholder:'0',
+          /* the running totals move as you type; the write-down follows a
+             moment later so it is not one request per keystroke */
+          oninput(e){
+            draft.set(n + '|' + k, Math.round(Number(e.target.value || 0) * 100));
+            drawTotals(); saveSoon(n);
+          },
           onchange(e){
             draft.set(n + '|' + k, Math.round(Number(e.target.value || 0) * 100));
             drawTotals(); save(n); drawCard();

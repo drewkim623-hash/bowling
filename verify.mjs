@@ -877,8 +877,12 @@ async function browserTests(){
      await page.evaluate(() => window.APP.state.money.length) < before);
   ok('and the running total goes back', /\+\$15/.test(await page.locator('.moneystrip').innerText()));
 
-  await page.locator('.moneystrip .chip', { hasText:'Tony' }).locator('button.rm').click();
-  await page.waitForTimeout(250);
+  /* taking somebody out moved off the strip and into the big totals view,
+     where it is a deliberate act rather than a mis-tap next to the numbers */
+  await page.locator('.moneystrip.stick').click();
+  await page.waitForSelector('.sheet .bigup');
+  await page.locator('.sheet .bigup .row', { hasText:'Tony' }).locator('button.rm').click();
+  await page.waitForTimeout(300);
   ok('somebody can be taken out of a night',
      !/Tony/.test(await page.locator('.moneystrip').innerText()),
      await page.locator('.moneystrip').innerText());
@@ -978,6 +982,42 @@ async function browserTests(){
     window.APP.go('home');
     return true;
   }));
+
+  section('Who is up');
+  await goTo(page, 'tonight');
+  const openIt = page.locator('#panel .nightrow button.card').first();
+  if (await openIt.count()){
+    await openIt.click();
+    await page.waitForSelector('#panel .gamecard');
+    const totals = page.locator('.moneystrip.stick');
+    ok('the running totals stick to the top of the page',
+       await totals.evaluate(el => getComputedStyle(el).position === 'sticky'
+                                && getComputedStyle(el).top === '0px'));
+    /* the bug: a row that scrolls sideways shows the first two people and
+       hides everybody else, which is exactly who you were asked about */
+    ok('and everybody fits without scrolling sideways',
+       await totals.evaluate(el => el.scrollWidth <= el.clientWidth + 1),
+       await totals.evaluate(el => `${el.scrollWidth} wide in ${el.clientWidth}`));
+    await totals.click();
+    await page.waitForSelector('.sheet .inner', { timeout:4000 });
+    const big = await page.locator('.sheet .inner').innerText();
+    ok('tapping it gives you the big version to read out', /who is up/i.test(big));
+    ok('with everybody on it, up and down',
+       (await page.locator('.sheet .bigup .nm').count()) >= 2);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+
+    /* typing a number and locking the phone without tapping away used to
+       lose it */
+    const cell2 = page.locator('#panel .gamecard input.n').first();
+    await cell2.fill('4');
+    await page.waitForTimeout(900);
+    ok('a number is written down shortly after you stop typing, without tapping away',
+       await page.evaluate(() => window.APP.state.money.some(m => m.amount_cents === 400)));
+    await page.locator('#panel .flowhead button', { hasText:'Done' }).click();
+    await page.waitForTimeout(250);
+  }
+  await goTo(page, 'home');
 
   section('Finishing a night');
   await goTo(page, 'tonight');
