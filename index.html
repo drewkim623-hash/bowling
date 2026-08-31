@@ -51,6 +51,54 @@ h1,h2,h3,p,dl,dd,dt,figure{margin:0}
 .spread{display:flex;gap:8px;align-items:center;justify-content:space-between}
 .good{color:var(--plus)}.bad{color:var(--red)}.gold{color:var(--gold)}
 
+/* ---- the bottom of the screen -------------------------------------------
+   Ten tabs on a strip does not fit on a phone: the one you are on ends up off
+   the right-hand edge, which is most of why the way back was hard to find.
+   Four places and a button instead. Everything else lives inside one of them. */
+.bar{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;
+  height:calc(64px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);
+  display:grid;grid-template-columns:1fr 1fr 86px 1fr 1fr;align-items:center;
+  background:rgba(11,11,15,.86);backdrop-filter:blur(18px);border-top:1px solid var(--ring);
+}
+.bar button.nav{
+  height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  background:none;border:0;cursor:pointer;color:var(--muted);
+}
+.bar button.nav .tx{font-size:9.5px;font-weight:750;letter-spacing:.09em;text-transform:uppercase}
+.bar button.nav[aria-current="page"]{color:var(--blue)}
+/* One icon set, drawn not typed. Emoji cannot take the accent colour, so an
+   emoji tab bar has no visible "you are here". */
+svg.ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
+.fab{
+  justify-self:center;width:62px;height:62px;margin-top:-24px;border-radius:50%;
+  background:var(--blue);color:#fff;font-size:30px;font-weight:300;line-height:1;
+  display:grid;place-items:center;border:0;cursor:pointer;
+  box-shadow:0 0 0 5px var(--plane),0 10px 26px rgba(57,135,229,.42);
+  transition:transform .12s ease;
+}
+.fab:active{transform:scale(.94)}
+body{padding-bottom:calc(64px + env(safe-area-inset-bottom) + 18px)}
+/* the lane and the night's book take the whole screen; the bar would only be
+   in the way, and both already carry their own way out */
+body.focus .bar{display:none}
+body.focus{padding-bottom:0}
+@media (min-width:620px){ .bar{max-width:720px;left:50%;transform:translateX(-50%)} }
+
+/* a row of places to go, used by the Stats page */
+.golist{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.golist button{
+  display:flex;align-items:center;gap:13px;width:100%;text-align:left;cursor:pointer;
+  background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);padding:14px;
+}
+.golist button:hover{background:var(--hover);border-color:rgba(57,135,229,.55)}
+.golist .sq{width:40px;height:40px;flex:none;border-radius:12px;display:grid;place-items:center;
+  background:rgba(57,135,229,.14);color:var(--blue)}
+.golist .t{display:block;font-size:15.5px;font-weight:750;letter-spacing:-.01em}
+.golist .s{display:block;margin-top:2px;font-size:12.5px;color:var(--muted);line-height:1.4}
+.golist .chev{margin-left:auto;color:var(--muted);font-size:20px}
+
 /* ---- hero ---- */
 /* two soft glows, painted as backgrounds so nothing can spill sideways */
 .hero{position:relative;padding:26px 0 16px;margin:0 calc(-1*var(--pad));padding-left:var(--pad);padding-right:var(--pad);
@@ -80,6 +128,18 @@ h1,h2,h3,p,dl,dd,dt,figure{margin:0}
 .tap:hover{transform:translateY(-2px);border-color:rgba(57,135,229,.55);background:var(--hover)}
 .tap:active{transform:translateY(0)}
 .sec{margin-top:28px}
+.nightrow{display:flex;align-items:stretch;gap:8px}
+.nightrow>.card{flex:1;min-width:0;margin-top:0}
+.xbtn{flex:none;width:44px;border:1px solid var(--ring);border-radius:var(--rs);
+  background:var(--surface);color:var(--muted);font-size:15px;cursor:pointer}
+.xbtn:hover{background:var(--hover);color:var(--red);border-color:rgba(230,103,103,.5)}
+.flowhead{display:flex;align-items:center;gap:10px;margin:2px 0 14px}
+.flowhead .ft{flex:1;min-width:0}
+.flowhead .ft>h2{font-size:18px;letter-spacing:-.02em;font-weight:750;line-height:1.2}
+.flowhead .ft>.sub{color:var(--muted);font-size:12px;margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn.back{flex:none;padding-left:10px;padding-right:13px;gap:2px}
+.btn.back .chev{font-size:19px;line-height:1;margin-top:-2px}
 .sec>h2{font-size:19px;letter-spacing:-.02em;font-weight:750}
 .sec>.sub{color:var(--muted);font-size:13px;margin-top:4px;line-height:1.5}
 
@@ -224,7 +284,16 @@ input:focus,select:focus{border-color:var(--blue)}
 .payrow:last-child{border-bottom:0}
 .payrow b{font-weight:750}
 .arrow{color:var(--muted)}
-.led{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--grid)}
+.led{display:grid;grid-template-columns:26px 1fr auto auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--grid)}
+.side{width:26px;height:26px;border-radius:9px;display:grid;place-items:center;
+  font-size:12px;font-weight:800;background:transparent;border:1px dashed var(--grid);color:var(--muted)}
+.side[data-t="A"]{background:rgba(57,135,229,.26);border:0;color:#a8cbf5}
+.side[data-t="B"]{background:rgba(25,158,112,.26);border:0;color:#8ad9bd}
+.side[data-t="C"]{background:rgba(201,133,0,.26);border:0;color:#e2b45c}
+.side[data-t="D"]{background:rgba(144,133,233,.26);border:0;color:#c0b8f4}
+.sideline{font-size:11.5px;color:var(--muted);margin-top:9px;padding-top:9px;
+  border-top:1px solid var(--grid);line-height:1.5}
+.sideline b{color:var(--ink-2);font-weight:680}
 .led:last-child{border-bottom:0}
 .led .who{font-size:13.5px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .led .amt{width:92px}
@@ -242,6 +311,19 @@ input:focus,select:focus{border-color:var(--blue)}
   border-bottom:1px solid var(--ring)}
 .moneystrip::-webkit-scrollbar{display:none}
 .balwarn{font-size:11.5px;color:var(--hold);margin-top:8px}
+.recrow{display:grid;grid-template-columns:1fr 70px auto auto;gap:12px;align-items:center;
+  padding:11px 0;border-bottom:1px solid var(--grid)}
+.recrow:last-child{border-bottom:0}
+.recrow .wl{font-weight:800;font-variant-numeric:tabular-nums;font-size:15px;letter-spacing:-.02em}
+.wbar{height:7px;border-radius:99px;background:var(--grid);overflow:hidden}
+.wbar>i{display:block;height:100%;background:var(--blue);border-radius:99px}
+.art{background:var(--surface);border:1px solid var(--ring);border-radius:var(--r);
+  padding:22px 20px;margin-top:10px}
+.art .kicker{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
+.art h3{margin:9px 0 0;font-size:24px;font-weight:800;letter-spacing:-.035em;line-height:1.15}
+.art .byline{margin-top:9px;font-size:11.5px;color:var(--muted);
+  padding-bottom:14px;border-bottom:1px solid var(--grid)}
+.art p{margin:13px 0 0;font-size:15px;line-height:1.62;color:var(--ink-2)}
 
 /* ---- the number pad: how most people actually score ---- */
 .pad{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:12px 0}
@@ -344,9 +426,9 @@ body.focus .tabs{padding-top:calc(8px + env(safe-area-inset-top))}
     <h1>Avengers Bowling</h1>
     <p class="tagline">The record book. Everyone logs their own scores. Every change is on the record.</p>
   </header>
-  <nav class="tabs" aria-label="Sections"><div class="strip2" id="tabs" role="tablist"></div></nav>
   <main id="panel" role="tabpanel"></main>
 </div>
+<nav class="bar" id="bar" aria-label="Main"></nav>
 <div id="sheet-root"></div>
 <div id="cta-root"></div>
 <div class="tipbox" id="tip"></div>
@@ -827,12 +909,201 @@ function powerScore(st){
   };
 }
 
+/* Power, off the money.
+
+   The pins ranking below needs scores, so it is empty for anybody who does not
+   log them — which is nearly everybody. This one only needs the book, so it
+   ranks the whole room, guests included.
+
+   Three things, and the reason for each:
+
+     how often you win   the record, shrunk toward even. Somebody 3-0 on their
+                         first night is not the best player here, and shrinking
+                         says so without having to bar them from the table.
+     how much you take   $5 wins and $50 wins are both one win in the record,
+                         so the money is where the size of it gets counted.
+     how often you turn  bowling twenty nights beats bowling two. It is not
+       up                skill, but a ranking that ignores it flatters tourists.
+
+   `PRIOR` is how many imaginary even games everybody starts with. Six is about
+   two nights: enough that one hot night cannot top the table, few enough that a
+   real run shows up by the third or fourth week. */
+const PRIOR = 6;
+const MONEY_POWER_PARTS = [
+  ['How often you win', 5, r => {
+    const played = r.won + r.lost;
+    return played ? (r.won + PRIOR / 2) / (played + PRIOR) : null;
+  }, 'games won, pulled toward even until you have played enough to prove it'],
+  ['How much you take', 3, r => {
+    const played = r.won + r.lost;
+    if (!played) return null;
+    /* a dollar a game either way is a big night out for this crowd, so that is
+       the top and bottom of the scale */
+    const per = (r.net / 100) / played;
+    return Math.max(0, Math.min(1, (per + 1) / 2));
+  }, 'money per game, up or down'],
+  ['How often you turn up', 2, r => Math.min(1, (r.nights || 0) / 12),
+    'nights in the book, out of twelve'],
+];
+function moneyPower(r){
+  const parts = MONEY_POWER_PARTS
+    .map(([label, weight, get, blurb]) => ({ label, weight, blurb, value: get(r) }))
+    .filter(p => p.value != null);
+  if (!parts.length || !(r.won + r.lost)) return { score: null, parts: [] };
+  const total = parts.reduce((a, p) => a + p.weight, 0);
+  return {
+    score: parts.reduce((a, p) => a + p.weight * p.value, 0) / total * 100,
+    parts: parts.map(p => ({ ...p, share: p.weight / total })),
+  };
+}
+
+/* Read the sides off the money.
+
+   Nobody is ever going to type in who was on whose team, and after the third
+   game nobody remembers. But the ledger already said it: in one game, the
+   people at the same number were on the same side, and the sign says whether
+   that side came away up. A pair at +5 beat a pair at -5. One person at +10
+   beat the four at -2.50 who paid for it. Four different numbers is four
+   people playing for themselves, which the book also allows.
+
+   Coming away up is winning. A five dollar win and a fifty dollar win are
+   both one win — the size of it is the money, which is recorded exactly and
+   sits next to the record everywhere it is shown. Nought means you sat the
+   game out or came away level, and either way it does not touch your record.
+
+   `cells` is one entry per person: { key, cents }. */
+function teamsFromMoney(cells){
+  const by = new Map();
+  for (const c of cells){
+    if (!c.cents) continue;
+    if (!by.has(c.cents)) by.set(c.cents, []);
+    by.get(c.cents).push(c.key);
+  }
+  /* biggest win first, biggest loss last, so A is always the side that took it */
+  const teams = [...by.entries()].sort((a, b) => b[0] - a[0])
+    .map(([cents, players], i) => ({ letter: 'ABCD'[i] || '·', cents, players, won: cents > 0 }));
+  const balance = cells.reduce((s, c) => s + c.cents, 0);
+  const flat = f => teams.filter(f).reduce((a, t) => a.concat(t.players), []);
+  return {
+    teams,
+    winners: flat(t => t.won),
+    losers:  flat(t => !t.won),
+    sat: cells.filter(c => !c.cents).map(c => c.key),
+    /* A game only tells you something if somebody was up and somebody down.
+       When it does not add to nothing, say so rather than quietly inventing
+       a result — somebody has mistyped, and they can see where. */
+    balanced: balance === 0 && teams.length > 1,
+    balance,
+    headToHead: teams.length === 2,
+  };
+}
+
+/* Write the night up.
+
+   No API key, no network, no cost, and it works on a night nobody has scored.
+   It is a template — but a template picking from what actually happened, which
+   is how every league recap you have ever read is written.
+
+   The rule it holds to: every number in the prose comes out of the book. It is
+   never told a score, so it never mentions one. */
+const dollars = c => (c < 0 ? '\u2212$' : '$') + (Math.abs(c) / 100).toFixed(2).replace(/\.00$/, '');
+/* Same night, same write-up — a report that reshuffles itself every time you
+   open it is not a record of anything. */
+function pick(list, seed){
+  let n = 0;
+  for (let i = 0; i < seed.length; i++) n = (n * 31 + seed.charCodeAt(i)) >>> 0;
+  return list[n % list.length];
+}
+function writeUp({ played_on, house, title, totals = [], rounds = [], goingIn = {} }){
+  const seed = played_on + house + totals.length + rounds.length;
+  const played = totals.filter(t => t.won + t.lost > 0);
+  if (!played.length)
+    return { headline:'Nothing in the book yet.',
+             story:['Nobody has put a number against this night. When somebody does, '
+                  + 'there will be something to say about it.'] };
+
+  const byNet = [...played].sort((a, b) => b.net - a.net);
+  const top = byNet[0], bottom = byNet[byNet.length - 1];
+  const games = rounds.length;
+  const swept  = played.filter(t => t.lost === 0 && t.won >= 3)[0];
+  const winless = played.filter(t => t.won === 0 && t.lost >= 3)[0];
+  const form = t => goingIn[t.key] || goingIn[t.name] || null;
+
+  /* the lead: the most interesting true thing, in order of how loud it is */
+  let headline, lead;
+  if (swept){
+    headline = pick([`${swept.name} won the lot.`,
+                     `${swept.name} took all ${swept.won}.`,
+                     `Nobody laid a finger on ${swept.name}.`], seed);
+    lead = `${swept.name} went ${swept.won}\u20130 and walked out ${dollars(swept.net)}`
+         + (winless ? `, and ${winless.name} did not win one` : '') + '.';
+  } else if (winless){
+    const f = form(winless);
+    const run = f ? f.lost + winless.lost : winless.lost;
+    headline = pick([`${winless.name} did not win a game.`,
+                     `${winless.name} went ${winless.won}\u2013${winless.lost}.`,
+                     `${winless.name} lost every game.`], seed);
+    lead = `${winless.name} lost all ${winless.lost} of them and finished the night `
+         + `${dollars(winless.net)}`
+         + (f && f.lost && !f.won ? `. That is ${run} straight now, and counting` : '')
+         + '.';
+  } else {
+    headline = pick([`${top.name} took the night.`,
+                     `${bottom.name} paid for the night.`,
+                     `${top.name} ${dollars(top.net)}, ${bottom.name} ${dollars(bottom.net)}.`], seed);
+    lead = `${top.name} finished ${top.won}\u2013${top.lost} and ${dollars(top.net)} up. `
+         + `${bottom.name} finished ${bottom.won}\u2013${bottom.lost} and paid `
+         + `${dollars(Math.abs(bottom.net))} of it.`;
+  }
+
+  const story = [lead];
+
+  /* the biggest single swing — one game where real money moved */
+  let big = null;
+  for (const r of rounds)
+    for (const t of r.teams)
+      if (!big || Math.abs(t.cents) > Math.abs(big.cents)) big = { ...t, game_no: r.game_no };
+  if (big && Math.abs(big.cents) >= 500 && games > 1){
+    const who = big.players.length > 2
+      ? `${big.players.slice(0, -1).join(', ')} and ${big.players[big.players.length - 1]}`
+      : big.players.join(' and ');
+    const each = big.players.length > 1 ? ' each' : '';
+    story.push(big.won
+      ? `Game ${big.game_no} was the one worth being on the right side of: `
+        + `${dollars(big.cents)}${each} to ${who}.`
+      : `Game ${big.game_no} was the expensive one \u2014 ${dollars(Math.abs(big.cents))}`
+        + `${each} out of ${who}.`);
+  }
+
+  /* whoever the night actually turned on, if it was not the person leading */
+  const other = byNet.find(t => t !== (swept || winless || top));
+  if (other && other.net !== 0)
+    story.push(`${other.name} went ${other.won}\u2013${other.lost} for `
+      + `${dollars(other.net)}${(() => {
+          const f = form(other);
+          if (!f) return '';
+          const now = f.net + other.net;
+          if (f.net < 0 && now >= 0) return ', which puts them back in the black for the first time in a while';
+          if (f.net > 0 && now < 0) return ', which is the whole cushion gone';
+          return '';
+        })()}.`);
+
+  /* how many actually changed hands, which is the bit people argue about */
+  const moved = played.reduce((a, t) => a + Math.max(0, t.net), 0);
+  story.push(`${games} game${games === 1 ? '' : 's'} at ${house}`
+    + (title ? `, ${title}` : '') + `. ${dollars(moved)} changed hands.`);
+
+  return { headline, story };
+}
+
 window.BOWL = {
   FULL, bit, cnt, pinsOf, maskOf, ROW, XP, aheadOf,
   ordered, counts, fell, leaveMask, scoreCounts, scoreRolls, deckState, validateRolls,
   possibleScores, isPossibleScore, witness,
   isSplit, leaveName, gameStats, mergeStats,
-  pct, mean, stdev, handicap, commonLeaves, settle, settleUp, band, powerScore, POWER_PARTS,
+  pct, mean, stdev, handicap, commonLeaves, settle, settleUp, teamsFromMoney, writeUp,
+  moneyPower, MONEY_POWER_PARTS,
+  band, powerScore, POWER_PARTS,
 };
 </script>
 
@@ -1341,6 +1612,47 @@ function derive(){
     D.moneyByPerson.set(who, (D.moneyByPerson.get(who) || 0) + m.amount_cents);
   }
 
+  /* One entry per game that has money on it, with the sides read straight off
+     the ledger. This — not the score sheet — is what the record runs on, since
+     the money is the one thing that always gets typed. */
+  D.moneyRounds = [];
+  D.roundsOfNight = new Map();
+  for (const [k, rows] of D.moneyByGame){
+    const cut = k.lastIndexOf('|');
+    const session_id = k.slice(0, cut), game_no = Number(k.slice(cut + 1));
+    const out = B.teamsFromMoney(rows.map(m => ({ key: personKey(m), cents: m.amount_cents })));
+    if (!out.teams.length) continue;                       // nothing typed in yet
+    const r = { session_id, game_no, ...out };
+    D.moneyRounds.push(r);
+    if (!D.roundsOfNight.has(session_id)) D.roundsOfNight.set(session_id, []);
+    D.roundsOfNight.get(session_id).push(r);
+  }
+  for (const list of D.roundsOfNight.values()) list.sort((a,b) => a.game_no - b.game_no);
+
+  /* Everybody's record, keyed by person rather than by account — so a guest
+     who is never going to sign up has one exactly like everybody else. */
+  D.recordOf = new Map();
+  const reachFor = key => {
+    if (!D.recordOf.has(key))
+      D.recordOf.set(key, { key, won:0, lost:0, nights:new Set(), mates:new Map() });
+    return D.recordOf.get(key);
+  };
+  for (const r of D.moneyRounds){
+    for (const t of r.teams){
+      for (const key of t.players){
+        const p = reachFor(key);
+        p.nights.add(r.session_id);
+        if (t.won) p.won++; else p.lost++;
+        for (const mate of t.players){
+          if (mate === key) continue;
+          const m = p.mates.get(mate) || { n:0, won:0 };
+          m.n++; if (t.won) m.won++;
+          p.mates.set(mate, m);
+        }
+      }
+    }
+  }
+
   D.stats = new Map(state.profiles.map(p => [p.id, careerOf(p.id)]));
   D.sessions = state.sessions.map(sessionSummary)
     .sort((a,b) => b.played_on.localeCompare(a.played_on) || b.created_at.localeCompare(a.created_at));
@@ -1463,6 +1775,40 @@ function sessionSummary(ses){
            pins: games.reduce((s,g) => s + g.total_score, 0),
            bestGame: games.length ? Math.max(...games.map(g => g.total_score)) : null };
 }
+/* Pairings, off the money. Two people who put the same number in the same game
+   were on the same side, so this needs no scores and no team ever being typed.
+   Each pair once, with how they did together and how each of them does apart —
+   which is the only way to tell a good pairing from two good bowlers. */
+function moneyPairs(minGames = 3){
+  const map = new Map();
+  for (const r of D.moneyRounds){
+    for (const t of r.teams){
+      if (t.players.length < 2) continue;
+      const side = [...t.players].sort();
+      for (let i = 0; i < side.length; i++)
+        for (let j = i + 1; j < side.length; j++){
+          const key = side[i] + '|' + side[j];
+          if (!map.has(key))
+            map.set(key, { a: side[i], b: side[j], n:0, won:0, nights:new Set() });
+          const p = map.get(key);
+          p.n++; if (t.won) p.won++;
+          p.nights.add(r.session_id);
+        }
+    }
+  }
+  return [...map.values()]
+    .filter(p => p.n >= minGames)
+    .map(p => {
+      const ra = moneyRecord(p.a), rb = moneyRecord(p.b);
+      const together = (p.won / p.n) * 100;
+      /* what you would expect of the two of them if the pairing meant nothing */
+      const apart = (ra.winPct != null && rb.winPct != null) ? (ra.winPct + rb.winPct) / 2 : null;
+      return { ...p, nights: p.nights.size, nameA: ra.name, nameB: rb.name,
+               together, apart, delta: apart == null ? null : together - apart };
+    })
+    .sort((x, y) => (y.delta ?? -999) - (x.delta ?? -999));
+}
+
 /* Who you bowl well with: same team, at least 3 shared sessions. */
 function pairings(){
   const map = new Map();
@@ -1527,6 +1873,18 @@ function tiles(list, cls){ return h('div.tiles' + (cls ? '.' + cls : ''), {}, li
 function card(...kids){ return h('div.card', {}, kids); }
 function sectionHead(title, sub){
   return h('div.sec', {}, h('h2', {}, title), sub ? h('p.sub', {}, sub) : null);
+}
+/* The header for anything that takes over the screen — the lane, a night's
+   book, typing up a session. The way out is always the same shape and always
+   in the same corner, because the tab strip scrolls and half of it is off the
+   side of a phone. `onBack` leaves the flow; `action` is the optional second
+   thing (pause, finish) that is not the way out. */
+function flowHead(title, sub, onBack, backLabel, action){
+  return h('div.flowhead', {},
+    h('button.btn.sm.back', { 'aria-label': backLabel || 'Back', onclick: onBack },
+      h('span.chev', {}, '‹'), backLabel || 'Back'),
+    h('div.ft', {}, h('h2', {}, title), sub ? h('p.sub', {}, sub) : null),
+    action || null);
 }
 /* Two people whose ids differ by one character should not end up the same
    colour, so the hash is spread around the wheel by the golden angle. */
@@ -2199,9 +2557,9 @@ function nextGame(){
 function liveView(){
   const box = h('div', {});
   const ses = LIVE.session;
-  box.append(h('div.spread', {},
-    h('div', {}, h('div.up', {}, `Game ${LIVE.gameNo} · live`),
-      h('div.small.muted', {}, `${shortDate(ses.played_on)} · ${ses.house}`)),
+  box.append(flowHead(`Game ${LIVE.gameNo} · live`, `${shortDate(ses.played_on)} · ${ses.house}`,
+    () => { endLive(); go('home'); toast('Parked. Everything finished is saved.'); },
+    'Home',
     h('button.btn.sm', { onclick(){ endLive(); render(); toast('Parked. Everything finished is saved.'); } }, 'Pause')));
   box.append(miniCard());
   box.append(h('div.row.wrapf', { style:{ margin:'4px 0 2px' } },
@@ -2337,9 +2695,9 @@ function sessionScores(){
   const ses = D.sessions.find(x => x.id === LOG.session.id) || LOG.session;
   const box = h('div', {});
   const maxGames = Math.max(1, ...ses.lines.map(l => l.n));
-  box.append(h('div.spread', {},
-    h('div', {}, h('h2', {}, dateLabel(ses.played_on)),
-      h('p.sub', {}, `${ses.house}${ses.title ? ' · ' + ses.title : ''}`)),
+  box.append(flowHead(dateLabel(ses.played_on), `${ses.house}${ses.title ? ' · ' + ses.title : ''}`,
+    () => { LOG.step = 'pick'; LOG.session = null; go('home'); },
+    'Home',
     h('button.btn.sm', { onclick(){ LOG.step = 'pick'; LOG.session = null; render(); } }, 'Done')));
 
   for (const line of [...ses.lines].sort((a,b) => a.name.localeCompare(b.name))){
@@ -2528,7 +2886,9 @@ function authCard(){
       h('div.seg', {},
         h('button', { 'aria-pressed': mode === 'in',  onclick(){ mode = 'in';  draw(); } }, 'Sign in'),
         h('button', { 'aria-pressed': mode === 'up',  onclick(){ mode = 'up';  draw(); } }, 'Create an account')),
-      mode === 'up' ? h('label.f', {}, h('span', {}, 'Display name'), name) : null,
+      /* spread, not a bare null: box.append is the DOM's own, and it turns a
+         null argument into the literal text "null" on the sign-in screen. */
+      ...(mode === 'up' ? [h('label.f', {}, h('span', {}, 'Display name'), name)] : []),
       h('label.f', {}, h('span', {}, 'Email'), email),
       h('label.f', {}, h('span', {}, 'Password'), pass),
       msg,
@@ -3169,6 +3529,35 @@ function moneyNightsForKey(key){
     sid, cents, played_on: D.session.get(sid)?.played_on || '' }))
     .sort((a,b) => a.played_on.localeCompare(b.played_on));
 }
+/* What the money says about one person: what they took, what they paid for,
+   and who they took it with. Everything here works for a guest. */
+function moneyRecord(key){
+  const r = D.recordOf.get(key);
+  const net = D.moneyByPerson.get(key) || 0;
+  const base = { key, name: personName(key), guest: personIsGuest(key),
+                 profile: personIsGuest(key) ? null : D.profile.get(key.slice(2)), net };
+  if (!r) return { ...base, won:0, lost:0, played:0, winPct:null, nights:0, mates:[] };
+  const played = r.won + r.lost;
+  const mates = [...r.mates.entries()]
+    .map(([k, m]) => ({ key:k, name: personName(k), n:m.n, won:m.won,
+                        winPct: m.n ? (m.won / m.n) * 100 : null }))
+    .sort((a,b) => b.n - a.n);
+  return { ...base, won:r.won, lost:r.lost, played,
+           winPct: played ? (r.won / played) * 100 : null,
+           nights: r.nights.size, mates,
+           best: mates.filter(m => m.n >= 3).sort((a,b) => b.winPct - a.winPct)[0] || null,
+           worst: mates.filter(m => m.n >= 3).sort((a,b) => a.winPct - b.winPct)[0] || null };
+}
+/* Everybody the book knows about, accounts and guests alike. */
+function everyPersonKey(){
+  return [...new Set([
+    ...state.profiles.map(p => keyOfProfile(p.id)),
+    ...state.guests.map(g => keyOfGuest(g.id)),
+    ...state.money.map(personKey),
+  ])];
+}
+const wl = r => `${r.won}\u2013${r.lost}`;
+
 function moneySummaryKey(key){
   const nights = moneyNightsForKey(key);
   const cents = nights.map(n => n.cents);
@@ -3306,6 +3695,32 @@ function moneyNightForm(){
   return box;
 }
 
+/* "Drew & Nat took it from Tony & Steve" — said in words underneath the game,
+   so you can see at a glance whether the numbers you typed mean what you meant. */
+function nameList(keys){
+  const n = keys.map(personName);
+  return n.length < 3 ? n.join(' & ') : n.slice(0, -1).join(', ') + ' & ' + n[n.length - 1];
+}
+function sidesLine(out){
+  const el = h('div.sideline', {});
+  if (!out.teams.length) return el;
+  if (!out.winners.length || !out.losers.length){
+    el.append('Somebody has to be up and somebody down before this reads as a game.');
+    return el;
+  }
+  if (out.headToHead){
+    el.append(h('b', {}, nameList(out.teams[0].players)), ' took it from ',
+              h('b', {}, nameList(out.teams[1].players)));
+  } else {
+    /* More than two sides means everybody played for themselves, so saying one
+       lot "took it from" the other would put people on teams they were not on. */
+    el.append(h('b', {}, nameList(out.winners)), ' came away up \u00b7 ',
+              h('b', {}, nameList(out.losers)), ' paid for it');
+  }
+  if (out.sat.length) el.append(` \u00b7 ${nameList(out.sat)} sat out`);
+  return el;
+}
+
 /* The book for one night. A card per game, a line per person, a running total
    that never goes stale, and everything saved the moment you type it. */
 function moneyLedger(ses){
@@ -3401,9 +3816,15 @@ function moneyLedger(ses){
         cardEl.append(q);
       }
 
+      /* The sides are not typed in. They are read off the numbers as they are
+         typed: same amount, same side; up means that side took the game. */
+      const out = B.teamsFromMoney(keys.map(k => ({ key:k, cents: cell(n, k) })));
+      const sideOf = k => out.teams.find(t => t.players.includes(k)) || null;
+
       const led = h('div', { style:{ marginTop:'10px' } });
       for (const k of keys){
         const v = cell(n, k);
+        const t = sideOf(k);
         const input = h('input.n', { type:'number', step:'0.5',
           value: v ? (v / 100).toFixed(2).replace(/\.00$/, '') : '', placeholder:'0',
           onchange(e){
@@ -3411,11 +3832,14 @@ function moneyLedger(ses){
             drawTotals(); save(n); drawCard();
           } });
         led.append(h('div.led', {},
+          h('span.side', { 'data-t': t ? t.letter : '' }, t ? t.letter : '–'),
           h('div.who', {}, personName(k), personIsGuest(k) ? h('span.tiny.muted', {}, ' guest') : null),
-          h('span.tiny.muted', {}, v > 0 ? 'up' : v < 0 ? 'down' : ''),
+          h('span.tiny', { cls: t ? (t.won ? 'good' : 'bad') : 'muted' },
+            t ? (t.won ? 'won' : 'lost') : 'sat out'),
           h('div.amt', {}, input)));
       }
       cardEl.append(led);
+      cardEl.append(sidesLine(out));
       const sum = keys.reduce((s, k) => s + cell(n, k), 0);
       if (sum !== 0) cardEl.append(h('div.balwarn', {}, `This game adds up to ${money(sum)}, not zero.`));
     }
@@ -3448,9 +3872,9 @@ function moneyLedger(ses){
     } }, '＋  Another game'));
   }
 
-  box.append(h('div.spread', {},
-    h('div', {}, h('h2', {}, dateLabel(ses.played_on)),
-      h('p.sub', {}, `${ses.house}${ses.title ? ' · ' + ses.title : ''}`)),
+  box.append(flowHead(dateLabel(ses.played_on), `${ses.house}${ses.title ? ' · ' + ses.title : ''}`,
+    () => { closeMoneyNight(); go('home'); },
+    'Home',
     h('button.btn.sm', { onclick(){ closeMoneyNight(); } }, 'Done')));
   drawTotals();
   box.append(strip);
@@ -3498,6 +3922,71 @@ function moneyLedger(ses){
   drawGames();
   box.append(list);
 
+  /* ---- finishing the night ------------------------------------------
+     Finishing does not lock anything — you can still fix a number after,
+     and everything below re-reads itself when you do. It only means "we
+     are done, tell me what happened". */
+  function nightRounds(){
+    const out = [];
+    for (let n = 1; n <= games; n++){
+      const r = B.teamsFromMoney(keys.map(k => ({ key:k, cents: cell(n, k) })));
+      if (r.teams.length) out.push({ game_no:n, ...r });
+    }
+    return out;
+  }
+  function nightTally(){
+    const tally = new Map();
+    for (const r of nightRounds())
+      for (const t of r.teams) for (const k of t.players){
+        const e = tally.get(k) || { key:k, won:0, lost:0 };
+        if (t.won) e.won++; else e.lost++;
+        tally.set(k, e);
+      }
+    return [...tally.values()].map(e => ({ ...e, net: totalFor(e.key) }))
+      .sort((a,b) => (b.won - b.lost) - (a.won - a.lost) || b.net - a.net);
+  }
+  function recordCard(){
+    const rows = nightTally();
+    if (!rows.length) return h('p.empty', {}, 'Type some numbers in and the record writes itself.');
+    return h('div.card', {}, rows.map(r => {
+      const played = r.won + r.lost;
+      return h('div.recrow', {},
+        h('div', {}, h('div', { style:{ fontWeight:650 } }, personName(r.key),
+            personIsGuest(r.key) ? h('span.tiny.muted', {}, ' guest') : null),
+          h('div.tiny.muted', {}, `${played} game${played === 1 ? '' : 's'}`)),
+        h('div.wbar', {}, h('i', { style:{ width: (played ? (r.won / played) * 100 : 0) + '%' } })),
+        h('div.wl', {}, wl(r)),
+        moneyPill(r.net));
+    }));
+  }
+
+  const doneKey = 'bowl.money.done.' + ses.id;
+  let finished = (() => { try { return !!localStorage.getItem(doneKey); } catch { return false; } })();
+  const wrap = h('div', {});
+  function drawWrap(){
+    clear(wrap);
+    if (!finished){
+      wrap.append(h('button.btn.pri.wide.big', { style:{ marginTop:'16px' }, onclick(){
+        if (!nightRounds().length){ toast('Nothing typed in yet.'); return; }
+        try { localStorage.setItem(doneKey, new Date().toISOString()); } catch {}
+        finished = true; drawWrap();
+        wrap.scrollIntoView({ behavior:'smooth', block:'start' });
+      } }, '\u2713  Finish the session'));
+      wrap.append(h('p.tiny.muted', { style:{ marginTop:'8px', textAlign:'center' } },
+        'Nothing locks — you can still fix a number afterwards.'));
+      return;
+    }
+    wrap.append(sectionHead("Tonight's record", 'Read off the money. Nobody logged a score.'));
+    wrap.append(recordCard());
+    wrap.append(recapSection(ses, nightRounds, nightTally));
+    wrap.append(h('button.btn.wide', { style:{ marginTop:'12px' }, onclick(){
+      try { localStorage.removeItem(doneKey); } catch {}
+      finished = false; drawWrap();
+    } }, 'Un-finish it'));
+  }
+  drawWrap();
+  box.append(wrap);
+
   /* who hands what to whom, so nobody works it out on a napkin */
   const square = h('div', {});
   function drawSquare(){
@@ -3524,7 +4013,7 @@ function moneyLedger(ses){
   }
 
   const _drawTotals = drawTotals;
-  drawTotals = function(){ _drawTotals(); drawSquare(); };
+  drawTotals = function(){ _drawTotals(); drawSquare(); if (finished) drawWrap(); };
   drawTotals();
   box.append(square);
   box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
@@ -3599,9 +4088,133 @@ function matchPerson(written, people){
       || null;
 }
 
+/* The note comes back from a language model, so now and then it is not a
+   sentence at all but a stray tag or a fragment. Show it only if it reads like
+   something a person wrote. */
+function cleanNote(note){
+  const s = String(note || '').replace(/<[^>]*>/g, '').trim();
+  if (s.length < 4 || !/[a-z]{3}/i.test(s)) return '';
+  return s.slice(0, 300);
+}
+
+/* ======================================================================
+   WRITING THE NIGHT UP
+   The facts go to a Supabase function that holds the API key, and a few
+   paragraphs come back. It is written from the money and the sides read off
+   it — no score is involved, and none is needed.
+   ====================================================================== */
+const canWriteUp = () => !!(window.__RECAP_STUB || (db && db.kind === 'live' && CONFIGURED));
+const recapKey = sid => 'bowl.money.recap.' + sid;
+
+/* Everybody's record BEFORE tonight, which is where "has now lost seven
+   straight" comes from. Without it the write-up can only describe one night. */
+function formGoingIn(sid, keys){
+  const out = {};
+  for (const k of keys) out[k] = { won:0, lost:0, net:0, streak:0 };
+  for (const r of D.moneyRounds){
+    if (r.session_id === sid) continue;
+    for (const t of r.teams) for (const k of t.players){
+      if (!out[k]) continue;
+      if (t.won) out[k].won++; else out[k].lost++;
+    }
+  }
+  for (const m of state.money){
+    if (m.session_id === sid) continue;
+    const k = personKey(m);
+    if (out[k]) out[k].net += m.amount_cents;
+  }
+  return out;
+}
+
+async function writeUpNight(payload){
+  if (window.__RECAP_STUB) return window.__RECAP_STUB;
+  let token = SUPA.anonKey;
+  try { const { data: sess } = await db.sb.auth.getSession(); token = sess?.session?.access_token || token; } catch {}
+  const res = await fetch(`${SUPA.url}/functions/v1/write-recap`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', apikey: SUPA.anonKey, Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 404) throw new Error('The write-up function is not deployed yet \u2014 '
+    + 'run  supabase functions deploy write-recap  and it will start working.');
+  let out = {};
+  try { out = await res.json(); } catch {}
+  if (!res.ok || out.error) throw new Error(out.error || `The writer answered ${res.status}.`);
+  return out;
+}
+
+/* The write-up, and the button that asks for one. Written once when you
+   finish, then it just sits there until you ask for another. */
+function recapSection(ses, nightRounds, nightTally){
+  const box = h('div', {});
+  box.append(sectionHead('The night, written up', 'From the money. No scores involved.'));
+  const slot = h('div', {});
+  box.append(slot);
+
+  const cached = (() => {
+    try { return JSON.parse(localStorage.getItem(recapKey(ses.id)) || 'null'); } catch { return null; }
+  })();
+  function localWriteUp(){
+    return B.writeUp({
+      played_on: ses.played_on, house: ses.house, title: ses.title,
+      totals: nightTally().map(t => ({ ...t, name: personName(t.key) })),
+      rounds: nightRounds().map(r => ({ ...r,
+        teams: r.teams.map(t => ({ ...t, players: t.players.map(personName) })) })),
+      goingIn: formGoingIn(ses.id, nightTally().map(t => t.key)),
+    });
+  }
+
+  function show(recap, byClaude){
+    clear(slot);
+    slot.append(h('div.art', {},
+      h('div.kicker', {}, `${dateLabel(ses.played_on)} \u00b7 ${ses.house}`),
+      h('h3', {}, recap.headline || 'The night'),
+      h('div.byline', {}, byClaude
+        ? 'Written from the money book. Nobody logged a score.'
+        : 'Read straight off the money book.'),
+      (recap.story || []).map(para => h('p', {}, para))));
+    /* The write-up above needs nothing but the numbers. This asks Claude for a
+       longer one, and only appears if the function has actually been deployed. */
+    if (!canWriteUp()) return;
+    slot.append(h('button.btn.wide', { style:{ marginTop:'10px' }, async onclick(e){
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = 'Writing\u2026';
+      try {
+        const tally = nightTally();
+        const keys = tally.map(t => t.key);
+        const payload = {
+          played_on: ses.played_on, house: ses.house, title: ses.title || null,
+          people: Object.fromEntries(keys.map(k => [k, personName(k)])),
+          games: nightRounds().map(r => ({
+            game_no: r.game_no,
+            sides: r.teams.map(t => ({ names: t.players.map(personName), amount: t.cents / 100, won: t.won })),
+            sat_out: r.sat.map(personName),
+          })),
+          totals: tally.map(t => ({ name: personName(t.key), won:t.won, lost:t.lost, net: t.net / 100 })),
+          going_in: Object.entries(formGoingIn(ses.id, keys)).map(([k, v]) =>
+            ({ name: personName(k), won:v.won, lost:v.lost, net: v.net / 100 })),
+        };
+        const longer = await writeUpNight(payload);
+        try { localStorage.setItem(recapKey(ses.id), JSON.stringify(longer)); } catch {}
+        show(longer, true);
+      } catch (err){
+        btn.disabled = false;
+        btn.textContent = '\u2728  Ask Claude for a longer one';
+        toast(err.message || String(err));
+      }
+    } }, '\u2728  Ask Claude for a longer one'));
+  }
+  show(cached || localWriteUp(), !!cached);
+  return box;
+}
+
 function photoSheet({ mode, people, onApply, title }){
   openSheet(title || (mode === 'money' ? 'Read the notes' : 'Read the monitor'), body => {
-    const file = h('input', { type:'file', accept:'image/*', capture:'environment', style:{ display:'none' } });
+    /* No `capture` attribute on purpose: with it, a phone goes straight to the
+       camera and the camera roll is unreachable. Without it you get the whole
+       sheet — Photo Library, Take Photo, Choose File — which is what people
+       usually want, because the photo was taken an hour ago. */
+    const file = h('input', { type:'file', accept:'image/*', style:{ display:'none' } });
     const preview = h('div', {});
     const out = h('div', {});
     const pick = h('button.btn.pri.wide.big', { onclick(){ file.click(); } }, '📷  Take or choose a photo');
@@ -3626,13 +4239,17 @@ function photoSheet({ mode, people, onApply, title }){
           written: p.name, match: matchPerson(p.name, people), values: p.values || [],
         }));
         if (!rows.length){
-          out.append(h('p.empty', {}, res.note || 'Nothing readable in that one. Try again straight on, with the whole thing in frame.'));
+          out.append(h('p.empty', {}, cleanNote(res.note) || 'Nothing readable in that one. Try again straight on, with the whole thing in frame.'));
           return;
         }
-        if (!res.confident || res.note)
+        /* Only a genuine lack of confidence raises the warning. The note is
+           extra detail when there is one, never the trigger — a stray token in
+           it used to put "check these" over a read that was perfectly fine,
+           which teaches people to ignore the one banner that matters. */
+        if (!res.confident)
           out.append(h('div.card', { style:{ borderColor:'rgba(201,133,0,.5)' } },
-            h('div.up.gold', {}, res.confident ? 'Worth a look' : 'Not sure about this one'),
-            h('p.small.ink2', { style:{ marginTop:'4px' } }, res.note || 'Some of these were hard to read. Check them.')));
+            h('div.up.gold', {}, 'Not sure about this one'),
+            h('p.small.ink2', { style:{ marginTop:'4px' } }, cleanNote(res.note) || 'Some of these were hard to read. Check them.')));
 
         out.append(sectionHead('What it read', 'Change anything that is wrong, then use it.'));
         for (const r of rows){
@@ -3682,11 +4299,19 @@ function tabTonight(){
   if (last && D.session.get(last)){
     const ses = D.session.get(last);
     box.append(sectionHead('Still open'));
-    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ openMoneyNight(last); } },
-      h('div.spread', {},
-        h('div', {}, h('div', { style:{ fontWeight:700 } }, dateLabel(ses.played_on)),
-          h('div.tiny.muted', {}, ses.house)),
-        h('span.chip.on', {}, 'Pick it back up'))));
+    box.append(h('div.nightrow', {},
+      h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ openMoneyNight(last); } },
+        h('div.spread', {},
+          h('div', {}, h('div', { style:{ fontWeight:700 } }, dateLabel(ses.played_on)),
+            h('div.tiny.muted', {}, ses.house)),
+          h('span.chip.on', {}, 'Pick it back up'))),
+      /* Forgetting is not deleting: this only stops the site offering the
+         night back. Everything written down stays where it is. */
+      h('button.xbtn', { 'aria-label':'Stop offering this night', title:'Stop offering this night',
+        onclick(){
+          try { localStorage.removeItem('bowl.money.night'); } catch {}
+          toast('Put away. It is still on the Money tab.'); render();
+        } }, '✕')));
   }
   box.append(moneyNightForm());
   const recent = D.sessions.slice(0, 4);
@@ -3694,11 +4319,28 @@ function tabTonight(){
     box.append(sectionHead('Or carry on with a night already started'));
     for (const ses of recent){
       const cash = D.moneyBySession.get(ses.id) || [];
-      box.append(h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ openMoneyNight(ses.id); } },
-        h('div.spread', {},
-          h('div', {}, h('div', { style:{ fontWeight:650 } }, dateLabel(ses.played_on)),
-            h('div.tiny.muted', {}, ses.house)),
-          h('span.chip', {}, cash.length ? 'has a book' : 'no money yet'))));
+      const games = (D.gamesBySession.get(ses.id) || []).length;
+      box.append(h('div.nightrow', {},
+        h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ openMoneyNight(ses.id); } },
+          h('div.spread', {},
+            h('div', {}, h('div', { style:{ fontWeight:650 } }, dateLabel(ses.played_on)),
+              h('div.tiny.muted', {}, ses.house)),
+            h('span.chip', {}, cash.length ? 'has a book' : 'no money yet'))),
+        h('button.xbtn', { 'aria-label':`Delete the night of ${dateLabel(ses.played_on)}`,
+          title:'Delete this night', async onclick(){
+            /* Say out loud everything that goes, because none of it comes back. */
+            const bits = [];
+            if (games) bits.push(`${games} game${games > 1 ? 's' : ''}`);
+            if (cash.length) bits.push('the money book');
+            if (!confirm(`Delete the night of ${dateLabel(ses.played_on)} at ${ses.house}?`
+                + (bits.length ? `\n\nThis takes ${bits.join(' and ')} with it.` : '')
+                + '\n\nThis cannot be undone.')) return;
+            try {
+              await db.deleteSession(ses.id);
+              if (localStorage.getItem('bowl.money.night') === ses.id) localStorage.removeItem('bowl.money.night');
+              await load(); toast('Night deleted'); render();
+            } catch (err){ toast(saveError(err)); }
+          } }, '✕')));
     }
   }
   return box;
@@ -3857,13 +4499,62 @@ function powerBreakdown(r){
     tipText: `${p.label}: ${Math.round(p.value * 100)} out of 100, worth ${Math.round(p.share * 100)}% of the ranking — ${p.blurb}`,
   })));
 }
+/* Everybody the book has a record for, ranked on it. No score required, so
+   this is the one that is actually full. */
+function moneyPowerRows(){
+  return everyPersonKey().map(moneyRecord).filter(r => r.played > 0)
+    .map(r => ({ ...r, ...B.moneyPower(r) }))
+    .filter(r => r.score != null)
+    .sort((a, b) => b.score - a.score);
+}
 function tabPower(){
   const box = h('div', {});
+
+  const mrows = moneyPowerRows();
   box.append(sectionHead('Power rankings',
-    `Who is actually bowling the best. No handicap anywhere near this — it is pins, spares, strikes, steadiness and current form. ${MIN_GAMES} games to be ranked.`));
+    'Off the book: how often you win, how much you take, how often you turn up. '
+    + 'Nobody needs to log a score to be in here, so everybody is.'));
+  if (!mrows.length){
+    box.append(h('p.empty', {}, 'Keep the book on a night or two and this fills itself in.'));
+  } else {
+    const most = [...mrows].sort((a, b) => b.net - a.net)[0];
+    const sharp = [...mrows].filter(r => r.played >= 8).sort((a, b) => b.winPct - a.winPct)[0];
+    const keen = [...mrows].sort((a, b) => b.nights - a.nights)[0];
+    box.append(tiles([
+      tile('Number one', mrows[0].name, `${Math.round(mrows[0].score)} out of 100`),
+      tile('Up the most', money(most.net), most.name),
+      sharp ? tile('Best win rate', pc(sharp.winPct), `${sharp.name} · ${sharp.won}\u2013${sharp.lost}`)
+            : tile('Most games', int(mrows[0].played), mrows[0].name),
+      tile('Out the most', int(keen.nights) + ' nights', keen.name),
+    ]));
+    box.append(h('div.card.pad0', {}, sortTable({
+      initial:'power', dir:-1, cardMain:'power',
+      onRow: r => { if (!r.guest) showBowler(r.key.slice(2)); },
+      cols:[
+        { key:'name', label:'Who', text:true, value:r => r.name,
+          cell:r => h('div.row', {}, r.profile ? avatar(r.profile) : nameChip(r.name),
+            h('span', { style:{ fontWeight:650 } }, r.name),
+            r.guest ? h('span.tiny.muted', {}, 'guest') : null) },
+        { key:'power', label:'Power', value:r => r.score, fmt:v => Math.round(v) },
+        { key:'wl', label:'Record', text:true, value:r => wl(r) },
+        { key:'pct', label:'Win %', value:r => r.winPct, fmt:pc },
+        { key:'played', label:'Games', value:r => r.played },
+        { key:'nights', label:'Nights', value:r => r.nights },
+        { key:'money', label:'Money', value:r => r.net, fmt:v => money(v) },
+      ], rows: mrows })));
+    const meM = state.user ? mrows.find(r => r.key === keyOfProfile(state.user.id)) : null;
+    for (const r of [mrows[0], meM].filter((v, i, a) => v && a.indexOf(v) === i)){
+      box.append(sectionHead(r === meM && r !== mrows[0] ? 'Where you score' : `Where ${r.name} scores`,
+        'Each part out of 100. The bar is how good, the tooltip says how much it counts.'));
+      box.append(h('div.card', {}, powerBreakdown(r)));
+    }
+  }
+
+  box.append(sectionHead('Bowling rankings',
+    `The pins themselves. No handicap anywhere near this — it is pins, spares, strikes, steadiness and form. Needs scores logged, so it only covers whoever logs them. ${MIN_GAMES} games to be ranked.`));
   const rows = powerRows();
   if (!rows.length){
-    box.append(h('p.empty', {}, `Nobody has ${MIN_GAMES} games yet. Log some and this fills itself in.`));
+    box.append(h('p.empty', {}, `Nobody has ${MIN_GAMES} scored games yet. This is the only table that needs them.`));
     box.append(glossary(POWER_GLOSS()));
     return box;
   }
@@ -4009,11 +4700,60 @@ const AWARDS = [
   ['Clutch',           'best 10th frame',            s2 => s2.tenthAvg,   one,  'max'],
   ['Gutter Insurance', 'lowest average, with love',  s2 => s2.avg,        one,  'min'],
 ];
+/* Records anybody can hold, guests included, because they come off the money
+   rather than off a score sheet nobody fills in. */
+function moneyRecords(){
+  const byNight = new Map();
+  for (const m of state.money){
+    const k = personKey(m) + '|' + m.session_id;
+    byNight.set(k, (byNight.get(k) || 0) + m.amount_cents);
+  }
+  let bestNight = null, worstNight = null;
+  for (const [k, cents] of byNight){
+    const cut = k.indexOf('|');
+    const row = { key: k.slice(0, cut), sid: k.slice(cut + 1), cents };
+    if (!cents) continue;
+    if (!bestNight  || cents > bestNight.cents)  bestNight  = row;
+    if (!worstNight || cents < worstNight.cents) worstNight = row;
+  }
+  /* the longest run of won games, in the order they were actually bowled */
+  const order = [...D.moneyRounds].sort((a, b) => {
+    const A = D.session.get(a.session_id), B = D.session.get(b.session_id);
+    return (A?.played_on || '').localeCompare(B?.played_on || '') || a.game_no - b.game_no;
+  });
+  const run = new Map(), best = new Map();
+  for (const r of order){
+    for (const k of r.winners){ run.set(k, (run.get(k) || 0) + 1);
+      if ((run.get(k)) > (best.get(k) || 0)) best.set(k, run.get(k)); }
+    for (const k of r.losers) run.set(k, 0);
+  }
+  const streak = [...best.entries()].sort((a, b) => b[1] - a[1])[0] || null;
+  const ranked = everyPersonKey().map(moneyRecord).filter(r => r.played >= 8);
+  const sharpest = [...ranked].sort((a, b) => b.winPct - a.winPct)[0] || null;
+  const busiest  = everyPersonKey().map(moneyRecord).sort((a, b) => b.nights - a.nights)[0] || null;
+  return { bestNight, worstNight, streak, sharpest, busiest };
+}
+
 function tabRecords(){
   const box = h('div', {});
   const R = records();
   const nameOf = x => x?.s?.name || x?.line?.name || '—';
-  box.append(sectionHead('The trophy case', 'Everything anybody has ever done here.'));
+  /* The money records go first, because they are the ones that fill in — every
+     night somebody keeps the book, whether or not a single score was logged. */
+  const M = moneyRecords();
+  const nightOf = r => r ? `${personName(r.key)} \u00b7 ${shortDate(D.session.get(r.sid)?.played_on || '')}` : '';
+  box.append(sectionHead('The money', 'Off the book, so guests hold these too.'));
+  box.append(tiles([
+    tile('Biggest night up', M.bestNight ? money(M.bestNight.cents) : '\u2014', nightOf(M.bestNight)),
+    tile('Biggest night down', M.worstNight ? money(M.worstNight.cents) : '\u2014', nightOf(M.worstNight)),
+    tile('Longest winning run', M.streak ? `${M.streak[1]} games` : '\u2014',
+      M.streak ? personName(M.streak[0]) : ''),
+    M.sharpest ? tile('Best win rate', pc(M.sharpest.winPct),
+        `${M.sharpest.name} \u00b7 ${M.sharpest.won}\u2013${M.sharpest.lost}`)
+      : tile('Most nights out', M.busiest ? int(M.busiest.nights) : '\u2014', M.busiest?.name || ''),
+  ]));
+
+  box.append(sectionHead('The trophy case', 'The bowling itself, for whoever logs a score.'));
   box.append(tiles([
     tile('Highest game', R.highGame ? int(R.highGame.total_score) : '—',
       R.highGame ? `${D.profile.get(R.highGame.profile_id)?.display_name} · ${shortDate(R.highGame.played_on)}` : ''),
@@ -4084,67 +4824,76 @@ function tabRecords(){
    ====================================================================== */
 function tabTeams(){
   const box = h('div', {});
-  const pairs = D.pairs.filter(p => p.sessions >= 4);
-  box.append(sectionHead('Who you bowl well with',
-    'The line-up changes every game, so there is no rivalry grid. This is what happens when two people end up on the same team. Four games together to appear.'));
+  const pairs = moneyPairs(3);
+  box.append(sectionHead('Who you win with',
+    'The line-up changes every game, so there is no rivalry grid. Two people at the same number were on the same side — that is all this needs. Three games together to appear.'));
   if (!pairs.length){
-    box.append(h('p.empty', {}, 'No pair has bowled three sessions on the same team yet.'));
+    box.append(h('p.empty', {}, 'No two people have been on the same side three times yet.'));
   } else {
     box.append(tiles([
       tile('Best pairing', `${pairs[0].nameA} + ${pairs[0].nameB}`,
-        `${(pairs[0].delta >= 0 ? '+' : '') + one(pairs[0].delta)} vs their usual`),
+        `${pc(pairs[0].together)} together, ${pairs[0].n} games`),
       tile('Worst pairing', `${pairs[pairs.length-1].nameA} + ${pairs[pairs.length-1].nameB}`,
-        `${one(pairs[pairs.length-1].delta)} vs their usual`),
+        `${pc(pairs[pairs.length-1].together)} together, ${pairs[pairs.length-1].n} games`),
     ], 'two'));
-    box.append(card(divergingBars(pairs.map(p => ({
+    box.append(card(divergingBars(pairs.filter(p => p.delta != null).map(p => ({
       label: `${p.nameA}+${p.nameB}`, value: p.delta,
-      tipText: `${p.nameA} + ${p.nameB}: ${one(p.together)} together vs ${one(p.baseline)} apart, ${p.sessions} sessions`,
+      tipText: `${p.nameA} + ${p.nameB}: win ${pc(p.together)} of ${p.n} games together, `
+             + `against ${pc(p.apart)} for the two of them apart`,
     })))));
     box.append(h('div.card.pad0', {}, sortTable({
       initial:'delta', dir:-1,
       cols:[
         { key:'pair', label:'Pair', text:true, value:p => `${p.nameA} + ${p.nameB}` },
-        { key:'sessions', label:'Games together', value:p => p.sessions },
-        { key:'together', label:'Combined avg', value:p => p.together, fmt:one },
-        { key:'baseline', label:'Their usual', value:p => p.baseline, fmt:one },
+        { key:'n', label:'Games together', value:p => p.n },
+        { key:'nights', label:'Nights', value:p => p.nights },
+        { key:'won', label:'Won', value:p => p.won },
+        { key:'together', label:'Together', value:p => p.together, fmt:pc },
+        { key:'apart', label:'Apart', value:p => p.apart, fmt:pc },
         { key:'delta', label:'Difference', value:p => p.delta,
-          cell:p => h('span.n', { cls: p.delta >= 0 ? 'good' : 'bad' }, (p.delta >= 0 ? '+' : '') + one(p.delta)) },
-        { key:'win', label:'Win %', value:p => p.winPct, fmt:pc },
+          cell:p => p.delta == null ? h('span.muted', {}, '\u2014')
+            : h('span.n', { cls: p.delta >= 0 ? 'good' : 'bad' },
+                (p.delta >= 0 ? '+' : '') + Math.round(p.delta) + '%') },
       ], rows: pairs })));
   }
 
-  box.append(sectionHead('Career team record', 'Across every rotating line-up.'));
-  const recs = [...D.stats.values()].filter(s2 => s2.games).map(s2 => ({ st:s2, ...teamRecord(s2.id) }))
-    .filter(r => r.played > 0 || r.mvp > 0);
+  /* Read off the money, not off the score sheet — so this fills in on every
+     night anybody keeps the book, and a guest who will never make an account
+     has a record here like everybody else. */
+  box.append(sectionHead('Career record', 'Every game the book has money against. Guests included.'));
+  const recs = everyPersonKey().map(moneyRecord).filter(r => r.played > 0);
   box.append(h('div.card.pad0', {}, sortTable({
-    initial:'pct', dir:-1, onRow:r => showBowler(r.st.id),
-    empty:'Nobody has bowled a session with teams yet.',
+    initial:'pct', dir:-1,
+    onRow:r => { if (!r.guest) showBowler(r.key.slice(2)); },
+    empty:'Nobody has a game with money against it yet.',
     cols:[
-      { key:'name', label:'Bowler', text:true, value:r => r.st.name },
+      { key:'name', label:'Who', text:true, value:r => r.name + (r.guest ? ' (guest)' : '') },
       { key:'played', label:'Games', value:r => r.played },
       { key:'won', label:'Won', value:r => r.won },
+      { key:'lost', label:'Lost', value:r => r.lost },
       { key:'pct', label:'Win %', value:r => r.winPct, fmt:pc },
-      { key:'mvp', label:'MVP', value:r => r.mvp },
-      { key:'money', label:'Money', value:r => r.money, fmt:v => money(v) },
-      { key:'most', label:'Most with', text:true, value:r => r.most?.name || '—' },
-      { key:'never', label:'Never won with', text:true, value:r => r.never?.name || '—' },
+      { key:'nights', label:'Nights', value:r => r.nights },
+      { key:'money', label:'Money', value:r => r.net, fmt:v => money(v) },
+      { key:'most', label:'Most with', text:true, value:r => r.mates[0]?.name || '—' },
+      { key:'best', label:'Best with', text:true, value:r => r.best?.name || '—' },
+      { key:'worst', label:'Never with', text:true, value:r => r.worst?.name || '—' },
     ], rows: recs })));
 
-  box.append(sectionHead('Recent games', 'Each game, with whoever was on whose team for that one.'));
-  const recent = [...D.rounds].filter(r => r.contested)
-    .sort((a,b) => b.played_on.localeCompare(a.played_on) || b.game_no - a.game_no).slice(0, 12);
-  if (!recent.length) box.append(h('p.empty', {}, 'No games with teams yet.'));
-  for (const r of recent){
-    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' }, onclick(){ showSession(r.session_id); } },
-      h('div.spread', {}, h('div', { style:{ fontWeight:650 } }, `${dateLabel(r.played_on)} · game ${r.game_no}`),
-        h('span.chip', {}, D.session.get(r.session_id)?.house || '')),
-      h('div', { style:{ marginTop:'8px' } }, barRows(r.teams.map(t => ({
-        label: `Team ${t.team}`, value: t.total, text: int(t.total),
-        color: r.winner && r.winner.team === t.team ? 'g' : '',
-        tipText: t.players.map(id => D.profile.get(id)?.display_name).join(' + '),
-      })))),
-      h('div.tiny.muted', { style:{ marginTop:'6px' } },
-        r.teams.map(t => `${t.team}: ${t.players.map(id => D.profile.get(id)?.display_name).join(', ')}`).join('  ·  '))));
+  box.append(sectionHead('Recent games', 'Each game and the sides read off the money.'));
+  const nights = new Map(D.sessions.map(x => [x.id, x]));
+  const moneyRecent = [...D.moneyRounds]
+    .filter(r => r.winners.length && r.losers.length && nights.has(r.session_id))
+    .sort((a, b) => (nights.get(b.session_id).played_on).localeCompare(nights.get(a.session_id).played_on)
+                 || b.game_no - a.game_no).slice(0, 12);
+  if (!moneyRecent.length) box.append(h('p.empty', {}, 'No game has money against it yet.'));
+  for (const r of moneyRecent){
+    const ses = nights.get(r.session_id);
+    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' },
+      onclick(){ showSession(r.session_id); } },
+      h('div.spread', {}, h('div', { style:{ fontWeight:650 } },
+          `${dateLabel(ses.played_on)} · game ${r.game_no}`),
+        h('span.chip', {}, ses.house || '')),
+      h('div', { style:{ marginTop:'8px' } }, sidesLine(r))));
   }
 
   box.append(sectionHead('Session MVPs', 'Highest series of the night.'));
@@ -4238,7 +4987,83 @@ const TABS = [
   ['records',  'Records',  tabRecords],
   ['teams',    'Teams',    tabTeams],
   ['me',       'Me',       tabMe],
+  ['stats',    'Stats',    tabStats],
 ];
+
+/* ---- the four places, and what lives inside each ----------------------
+   Every tab id above still works, and every old #hash still resolves — the
+   bar just decides which of the four lights up while you are on it. */
+const ICON = {
+  home:  'M3.6 10.4 12 4l8.4 6.4V20a1 1 0 0 1-1 1h-4.6v-6H9.2v6H4.6a1 1 0 0 1-1-1z',
+  stats: 'M4 20V12M9.3 20V5M14.7 20v-6M20 20V9',
+  money: null,
+  people:'M9.2 5a3.4 3.4 0 1 1 0 6.8 3.4 3.4 0 0 1 0-6.8M3 20c0-3.4 2.8-5.4 6.2-5.4s6.2 2 6.2 5.4'
+       + 'M16.4 5.4a3.4 3.4 0 0 1 0 6.5M17.6 14.9c2.1.6 3.4 2.4 3.4 5.1',
+};
+/* SVG lives in its own namespace: an <svg> built with createElement is an
+   unknown HTML element and draws nothing at all. */
+const SVGNS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs, ...kids){
+  const el = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  el.append(...kids);
+  return el;
+}
+const icon = name => svgEl('svg', { class:'ic', viewBox:'0 0 24 24' },
+  ...(name === 'money'
+    ? [svgEl('rect', { x:'2.8', y:'5.6', width:'18.4', height:'12.8', rx:'2.4' }),
+       svgEl('path', { d:'M12 8.6v6.8M13.9 10.2a2 2 0 0 0-3.8.6c0 1.9 3.8.8 3.8 2.7a2 2 0 0 1-3.8.6' })]
+    : [svgEl('path', { d: ICON[name] })]));
+
+const PLACES = [
+  { id:'home',   label:'Home',   icon:'home',   holds:['home'] },
+  { id:'stats',  label:'Stats',  icon:'stats',  holds:['stats','power','records','teams','sessions','log'] },
+  { id:'money',  label:'Money',  icon:'money',  holds:['money','tonight'] },
+  { id:'people', label:'People', icon:'people', holds:['bowlers','me'], goes:'bowlers' },
+];
+
+/* Everything that used to be its own tab, now one page you go through. */
+const STATS_PAGES = [
+  ['power',    '\u26a1', 'Power rankings', 'Who is actually winning, off the book'],
+  ['teams',    '\u{1f91d}', 'Teams',          'Who you win with, read off the money'],
+  ['records',  '\u{1f3c6}', 'Records',        'The money records, and the trophy case'],
+  ['sessions', '\u{1f4c5}', 'Every night',    'One card each, all the way back'],
+  ['log',      '\u270f\ufe0f', 'Log a session',  'Score it live, or type one up after'],
+];
+function tabStats(){
+  const box = h('div', {});
+  box.append(sectionHead('Stats', 'The deep end. Nothing here is needed to keep a night.'));
+  const list = h('div.golist', {});
+  for (const [id, emoji, title, sub] of STATS_PAGES)
+    list.append(h('button', { onclick(){ go(id); } },
+      h('span.sq', {}, emoji),
+      h('span', { style:{ flex:1, minWidth:0 } },
+        h('span.t', {}, title), h('span.s', {}, sub)),
+      h('span.chev', {}, '\u203a')));
+  box.append(list);
+  return box;
+}
+
+/* The button in the middle. Scores and money are separate books, and the
+   whole point is that you can keep either one without the other. */
+function whatAreYouDoing(){
+  if (!state.user){ go('tonight'); return; }
+  openSheet('What are you doing?', body => {
+    const list = h('div.golist', {});
+    const choice = (emoji, title, sub, run) =>
+      list.append(h('button', { onclick(){ closeSheet(); run(); } },
+        h('span.sq', {}, emoji),
+        h('span', { style:{ flex:1, minWidth:0 } },
+          h('span.t', {}, title), h('span.s', {}, sub)),
+        h('span.chev', {}, '\u203a')));
+    choice('\u{1f4b5}', 'Keep the money', 'Who won what \u2014 no scores needed', () => go('tonight'));
+    choice('\u{1f3b3}', 'Score it live', 'The lane view, tap as you bowl', () => go('log'));
+    choice('\u270f\ufe0f', 'Type in a night', 'For writing up one that already happened', () => go('log'));
+    if (canReadPhotos())
+      choice('\u{1f4f7}', 'Read it off a photo', 'The monitor, or your notes page', () => go('tonight'));
+    body.append(list);
+  }, 'Scores and money are separate books. Keep either, or both.');
+}
 let current = 'home';
 function go(id){
   current = id;
@@ -4247,10 +5072,14 @@ function go(id){
   window.scrollTo({ top: 0 });
 }
 function render(){
-  const strip = clear($('#tabs'));
-  for (const [id, label] of TABS){
-    strip.append(h('button.tab', { role:'tab', 'aria-selected': String(id === current),
-      onclick(){ go(id); } }, label));
+  const bar = clear($('#bar'));
+  for (const place of PLACES){
+    bar.append(h('button.nav', { 'aria-current': place.holds.includes(current) ? 'page' : 'false',
+      onclick(){ go(place.goes || place.id); } },
+      icon(place.icon), h('span.tx', {}, place.label)));
+    if (place.id === 'stats')
+      bar.append(h('button.fab', { 'aria-label':'Log a game or start a night',
+        onclick: whatAreYouDoing }, '+'));
   }
   const build = (TABS.find(t => t[0] === current) || TABS[0])[2];
   const panel = $('#panel');
@@ -4263,9 +5092,7 @@ function render(){
   panel.replaceChildren(next);
   document.body.classList.toggle('focus',
     (current === 'log' && !!(LIVE.session || LOG.entry)) || (current === 'tonight' && !!MONEY.session));
-  const cta = clear($('#cta-root'));
-  if (state.user && !['log','home','money','tonight'].includes(current) && profileComplete(state.me))
-    cta.append(h('div.sticky-cta', {}, h('button.btn.pri.big', { onclick(){ go('log'); } }, '＋  Log a session')));
+  clear($('#cta-root'));   // the button in the middle of the bar does this now
 }
 async function boot(reload){
   if (!db){

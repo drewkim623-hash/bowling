@@ -26,6 +26,15 @@ function eq(name, got, want){
 }
 function section(t){ console.log(`\n\x1b[1m${t}\x1b[0m`); }
 
+/* The ten-tab strip is gone — four places along the bottom and a button in the
+   middle. Most tests below care about the page they land on, not how they got
+   there, so they ask the router directly. The bar itself is tested on its own,
+   by clicking it, under "Getting around". */
+async function goTo(pg, id){
+  await pg.evaluate(i => window.APP.go(i), id);
+  await pg.waitForTimeout(160);
+}
+
 /* ------------------------------------------------------------------ engine */
 function extractEngine(){
   const html = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
@@ -262,6 +271,118 @@ eq('and so is the bottom', B.powerScore({ avg:40 }).score, 0);
   ok('and by whether they pick their spares up', better.score > worse.score);
 }
 
+section('Reading the sides off the money');
+{
+  const C = o => Object.entries(o).map(([key, cents]) => ({ key, cents }));
+
+  const two = B.teamsFromMoney(C({ drew:500, nat:500, tony:-500, steve:-500 }));
+  eq('two a side: two sides', two.teams.length, 2);
+  eq('the winners are the pair at the same positive number', two.winners.join(), 'drew,nat');
+  eq('and the losers the pair at the same negative one', two.losers.join(), 'tony,steve');
+  ok('a game that adds to nothing is balanced', two.balanced);
+  ok('and two sides is a head to head', two.headToHead);
+
+  const solo = B.teamsFromMoney(C({ drew:1000, nat:-250, tony:-250, steve:-250, bruce:-250 }));
+  eq('one against four is still two sides', solo.teams.length, 2);
+  eq('the four who paid are one side', solo.losers.length, 4);
+  eq('and the one who took it is the other', solo.winners.join(), 'drew');
+
+  const free = B.teamsFromMoney(C({ drew:1000, nat:500, tony:-500, steve:-1000 }));
+  eq('four different numbers is four sides', free.teams.length, 4);
+  eq('sorted biggest win first', free.teams[0].players.join(), 'drew');
+  eq('down to the biggest loss', free.teams[3].players.join(), 'steve');
+  eq('anyone who came away up won it', free.winners.join(), 'drew,nat');
+  eq('and anyone down lost it', free.losers.join(), 'tony,steve');
+  ok('four sides is not a head to head', !free.headToHead);
+
+  const sat = B.teamsFromMoney(C({ drew:500, nat:-500, bruce:0 }));
+  eq('nought means you sat it out', sat.sat.join(), 'bruce');
+  ok('and it puts you on neither side', !sat.winners.includes('bruce') && !sat.losers.includes('bruce'));
+
+  const off = B.teamsFromMoney(C({ drew:500, nat:500, tony:-500, steve:-300 }));
+  ok('a game that does not add to nothing still reads', off.teams.length === 3);
+  ok('but it says so', !off.balanced);
+  eq('and by how much', off.balance, 200);
+
+  const empty = B.teamsFromMoney(C({ drew:0, nat:0 }));
+  eq('a game nobody has typed yet has no sides', empty.teams.length, 0);
+  eq('nobody won it', empty.winners.length, 0);
+  ok('and it is not a head to head', !empty.headToHead);
+
+  const allup = B.teamsFromMoney(C({ drew:500, nat:500 }));
+  eq('if everyone is up there is nobody to have beaten', allup.losers.length, 0);
+  ok('which is not a real game, and it does not balance', !allup.balanced);
+}
+
+section('Power off the money');
+{
+  const P = o => B.moneyPower({ won:0, lost:0, net:0, nights:1, ...o });
+
+  const hot  = P({ won:30, lost:6,  net:9000,  nights:9 });
+  const cold = P({ won:6,  lost:30, net:-9000, nights:9 });
+  ok('winning most of them beats losing most of them', hot.score > cold.score);
+  ok('a score is a number out of a hundred', hot.score <= 100 && cold.score >= 0);
+
+  /* the whole point of shrinking: one lucky night is not a career */
+  const lucky = P({ won:3, lost:0, net:1500, nights:1 });
+  const proven = P({ won:24, lost:12, net:6000, nights:9 });
+  ok('three games at 100% does not outrank two hundred at 67%', proven.score > lucky.score);
+  ok('but a perfect night still scores something', lucky.score > 0);
+
+  const rich = P({ won:20, lost:20, net:12000, nights:10 });
+  const even = P({ won:20, lost:20, net:0,     nights:10 });
+  ok('at the same record, the one who took more money ranks higher', rich.score > even.score);
+
+  const nobody = P({ won:0, lost:0, net:0, nights:0 });
+  eq('somebody with no games has no score at all', nobody.score, null);
+
+  ok('every part is a fraction of one', hot.parts.every(x => x.value >= 0 && x.value <= 1));
+  ok('and the parts say what they are', hot.parts.every(x => x.label && x.blurb));
+}
+
+section('Writing the night up');
+{
+  const T = (name, won, lost, net) => ({ key:name, name, won, lost, net });
+  const R = (n, sides) => ({ game_no:n, ...B.teamsFromMoney(sides) });
+  const C = o => Object.entries(o).map(([key, cents]) => ({ key, cents }));
+
+  const night = {
+    played_on:'2026-08-28', house:'Bowl America Fairfax', title:null,
+    totals:[T('Drew',3,1,2000), T('Nat',3,1,1250), T('Tony',1,3,-750), T('Steve',0,4,-2250)],
+    rounds:[ R(1, C({ Drew:500, Nat:500, Tony:-500, Steve:-500 })),
+             R(2, C({ Drew:1000, Nat:-250, Tony:-250, Steve:-250, Bruce:-250 })),
+             R(3, C({ Drew:-500, Nat:500, Tony:500, Steve:-500 })),
+             R(4, C({ Drew:1000, Nat:500, Tony:-500, Steve:-1000 })) ],
+    goingIn:{ Steve:{ won:0, lost:6, net:-3000 }, Drew:{ won:8, lost:2, net:4000 } },
+  };
+  const up = B.writeUp(night);
+  ok('it leads with the man who did not win a game', /Steve/.test(up.headline));
+  ok('the headline is short', up.headline.length < 60);
+  ok('it runs to a few paragraphs', up.story.length >= 3 && up.story.length <= 6);
+  const all = up.story.join(' ');
+  ok('it counts the losing streak from before tonight', /10|ten/.test(all));
+  ok('it says what the worst of it cost', /22\.50/.test(all));
+  ok('it never claims a score, because it was never told one',
+     !/\bpins?\b|\bstrikes?\b|\bspares?\b|\bframes?\b/i.test(all));
+
+  const swept = B.writeUp({ ...night,
+    totals:[T('Drew',4,0,2000), T('Steve',0,4,-2000)],
+    goingIn:{} });
+  ok('a clean sweep leads instead', /Drew/.test(swept.headline));
+
+  const quiet = B.writeUp({ played_on:'2026-01-01', house:'Somewhere', title:null,
+    totals:[T('Drew',1,1,0), T('Nat',1,1,0)], rounds:[], goingIn:{} });
+  ok('a night where nothing happened still says something', quiet.story.length >= 1);
+
+  const empty = B.writeUp({ played_on:'2026-01-01', house:'X', title:null,
+    totals:[], rounds:[], goingIn:{} });
+  ok('and an empty night does not pretend', !!empty.headline);
+
+  const a = B.writeUp({ ...night, played_on:'2026-08-28' });
+  const b = B.writeUp({ ...night, played_on:'2026-08-28' });
+  eq('the same night is written the same way twice', a.headline, b.headline);
+}
+
 section('Squaring up at the end');
 {
   const t = B.settleUp({ drew: 1500, nat: -500, tony: -500, mike: -500 });
@@ -411,7 +532,8 @@ async function browserTests(){
   ok('the page boots with the stubbed client', true);
   const engineTotal = await page.evaluate(() => window.BOWL.scoreCounts(Array(12).fill(10)).total);
   eq('the shipped engine scores a perfect game in the browser too', engineTotal, 300);
-  eq('every tab is on the tab strip', await page.locator('#tabs .tab').count(), 10);
+  eq('four places along the bottom', await page.locator('#bar button.nav').count(), 4);
+  eq('and one button in the middle', await page.locator('#bar button.fab').count(), 1);
 
   section('Home');
   const leader = await page.locator('.champ').first().innerText();
@@ -449,7 +571,7 @@ async function browserTests(){
   await page.waitForSelector('.sheet', { state:'detached' });
 
   section('Score entry — just the number');
-  await page.locator('#tabs .tab', { hasText:/^Log$/ }).click();
+  await goTo(page, 'log');
   await page.locator('button.btn', { hasText:'Type in scores afterwards' }).click();
   await page.locator('button.btn', { hasText:'Log game' }).first().click();
   await page.waitForSelector('.pad');
@@ -499,7 +621,7 @@ async function browserTests(){
   for (const [id, label] of [['home','Home'],['log','Log'],['bowlers','Bowlers'],['sessions','Sessions'],
                              ['records','Records'],['teams','Teams'],['money','Money'],
                              ['power','Power'],['tonight','Tonight'],['me','Me']]){
-    await page.locator('#tabs .tab', { hasText: new RegExp(`^${label}$`) }).click();
+    await goTo(page, label.toLowerCase());
     await page.waitForTimeout(120);
     const over = await page.evaluate(() => ({
       doc: document.documentElement.scrollWidth,
@@ -512,7 +634,7 @@ async function browserTests(){
        `document ${over.doc}px, body ${over.body}px, ${JSON.stringify(over.worst)}`);
     ok(`${label}: renders something`, (await page.locator('#panel').innerText()).length > 80);
   }
-  await page.locator('#tabs .tab', { hasText:'Bowlers' }).click();
+  await goTo(page, 'bowlers');
   await page.locator('#panel .rcard').first().click();
   await page.waitForSelector('.sheet .inner');
   const sheetOver = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -520,7 +642,7 @@ async function browserTests(){
   await page.locator('.sheet .closebtn').click();
 
   section('The live lane');
-  await page.locator('#tabs .tab', { hasText:/^Log$/ }).click();
+  await goTo(page, 'log');
   const leave = page.locator('button.btn.sm', { hasText:'Done' });
   if (await leave.count()) await leave.first().click();
   await page.locator('.person', { hasText:'Nat' }).click();
@@ -568,7 +690,7 @@ async function browserTests(){
   await page.locator('.pad button.mark', { hasText:'strike' }).click();
   await page.reload();
   await page.waitForSelector('body[data-ready="1"]');
-  await page.locator('#tabs .tab', { hasText:/^Log$/ }).click();
+  await goTo(page, 'log');
   ok('a half-finished game survives closing the page',
      /still going/i.test(await page.locator('#panel').innerText()));
   await page.locator('.card', { hasText:'Pick it back up' }).click();
@@ -587,19 +709,19 @@ async function browserTests(){
      (done.match(/300/g) || []).length === 2, done.replace(/\n/g, ' | '));
   ok('and it offers the next game', await page.locator('button', { hasText:'Start game 2' }).count() === 1);
   await page.locator('button.btn.big', { hasText:'Finish up' }).click();
-  await page.locator('#tabs .tab', { hasText:'Home' }).click();
+  await goTo(page, 'home');
   ok('the live games are in the record book',
      (await page.locator('#panel').innerText()).includes('300'));
 
   section('The commissioner');
   const others = D_gamesNotMine(fixture);
-  await page.locator('#tabs .tab', { hasText:'Sessions' }).click();
+  await goTo(page, 'sessions');
   await page.locator('#panel .card', { hasText:'Mar' }).first().click();
   await page.waitForSelector('.sheet .inner');
   ok('the commissioner can delete a session they did not create',
      /delete this session/i.test(await page.locator('.sheet .inner').innerText()));
   await page.locator('.sheet .closebtn').click();
-  await page.locator('#tabs .tab', { hasText:'Home' }).click();
+  await goTo(page, 'home');
   await page.locator('.feed.tap', { hasText:'Tony' }).first().click();
   await page.waitForSelector('.sheet .inner');
   const gameSheet = await page.locator('.sheet .inner').innerText();
@@ -624,7 +746,7 @@ async function browserTests(){
   await page.waitForTimeout(120);
 
   section('Keeping the book');
-  await page.locator('#tabs .tab', { hasText:'Tonight' }).click();
+  await goTo(page, 'tonight');
   await page.locator('.person', { hasText:'Nat' }).first().click();
   await page.locator('.person', { hasText:'Tony' }).first().click();
   await page.locator('#panel input[placeholder="name"]').fill('Mike');
@@ -706,7 +828,7 @@ async function browserTests(){
   ok('done takes you back to starting a night', await page.locator('#panel input[placeholder="name"]').count() === 1);
 
   section('The all-time book');
-  await page.locator('#tabs .tab', { hasText:/^Money$/ }).click();
+  await goTo(page, 'money');
   const book = await page.locator('#panel').innerText();
   ok('the night is in the book', /night by night/i.test(book));
   ok('with the account holders', /Drew/.test(book));
@@ -718,7 +840,7 @@ async function browserTests(){
 
 
   section('Guests can be tidied up');
-  await page.locator('#tabs .tab', { hasText:/^Money$/ }).click();
+  await goTo(page, 'money');
   const mikeCard = page.locator('#panel .card', { hasText:'Delete Mike' });
   await mikeCard.locator('input[type=text]').fill('Michael');
   await mikeCard.locator('button.btn.sm', { hasText:'Rename' }).click();
@@ -753,24 +875,78 @@ async function browserTests(){
   ok('a guest can simply be deleted',
      await page.evaluate(() => !window.APP.state.guests.some(g => g.name === 'Ash')));
 
+  section('Getting around');
+  /* The one place that drives the bar by clicking it, the way a thumb does. */
+  const bar = page.locator('#bar button.nav');
+  await bar.filter({ hasText:'Stats' }).click();
+  await page.waitForTimeout(220);
+  ok('Stats opens a page of everywhere else',
+     /power rankings/i.test(await page.locator('#panel').innerText()));
+  ok('and the bar says you are on it',
+     await page.locator('#bar button.nav[aria-current="page"]').filter({ hasText:'Stats' }).count() === 1);
+
+  await page.locator('#panel .golist button', { hasText:'Records' }).click();
+  await page.waitForTimeout(220);
+  ok('a page inside Stats opens', /trophy case/i.test(await page.locator('#panel').innerText()));
+  ok('and Stats stays lit while you are inside it',
+     await page.locator('#bar button.nav[aria-current="page"]').filter({ hasText:'Stats' }).count() === 1);
+
+  await bar.filter({ hasText:'Money' }).click();
+  await page.waitForTimeout(220);
+  ok('Money is one of the four', /the book/i.test(await page.locator('#panel').innerText()));
+
+  await page.locator('#bar button.fab').click();
+  await page.waitForSelector('.sheet .inner', { timeout:4000 });
+  const asked = await page.locator('.sheet .inner').innerText();
+  ok('the middle button asks what you are doing', /what are you doing/i.test(asked));
+  ok('and offers the money book without any scoring', /keep the money/i.test(asked));
+  await page.locator('.sheet .golist button', { hasText:'Keep the money' }).click();
+  await page.waitForTimeout(260);
+  ok('which takes you straight to tonight',
+     await page.evaluate(() => location.hash === '#tonight'));
+
+  ok('every old link still resolves', await page.evaluate(async () => {
+    for (const id of ['power','teams','records','sessions','bowlers','me','home','log']){
+      window.APP.go(id);
+      if (!document.querySelector('#panel')?.textContent?.trim()) return false;
+    }
+    window.APP.go('home');
+    return true;
+  }));
+
   section('Power rankings');
-  await page.locator('#tabs .tab', { hasText:'Power' }).click();
+  await goTo(page, 'power');
   const power = await page.locator('#panel').innerText();
   ok('the rankings render', /power rankings/i.test(power));
   ok('and say plainly that no handicap is involved', /no handicap/i.test(power));
-  const order = await page.locator('#panel .rcard .rc-title').allInnerTexts();
-  const scores = await page.locator('#panel .rcard .rc-main').allInnerTexts();
-  ok('ranked best first', scores.map(Number).every((v, i, a) => i === 0 || a[i-1] >= v), JSON.stringify(scores));
+  /* two tables now: the money one, which everybody is in, and the pins one,
+     which only covers whoever logs a score. Each is ranked on its own. */
+  const tables = page.locator('#panel .card.pad0');
+  const howMany = await tables.count();
+  ok('both rankings render', howMany >= 2, `found ${howMany}`);
+  for (let i = 0; i < howMany; i++){
+    const scores = (await tables.nth(i).locator('.rcard .rc-main').allInnerTexts()).map(Number);
+    ok(`ranking ${i + 1} is ordered best first`,
+       scores.every((v, j, a) => j === 0 || a[j-1] >= v), JSON.stringify(scores));
+  }
+  ok('a guest with no account is ranked too',
+     await page.evaluate(() => {
+       const names = window.APP.D && window.APP.state.guests.map(g => g.name);
+       const txt = document.querySelector('#panel').innerText;
+       return !names.length || names.some(n => txt.includes(n));
+     }));
   ok('everybody ranked has enough games',
      await page.evaluate(() => window.APP.D.stats && [...window.APP.D.stats.values()]
        .filter(s => s.games >= 6).length >= 2));
   ok('the breakdown shows every part of the formula',
      (await page.locator('#panel .barrow').count()) >= 5);
+  /* the pins table is the second one — that is the one about bowling well */
+  const pinOrder = await tables.nth(howMany - 1).locator('.rcard .rc-title').allInnerTexts();
   ok('the leader is the best bowler, not the luckiest',
-     order[0] && /Drew|Nat/.test(order[0]), JSON.stringify(order.slice(0,3)));
+     pinOrder[0] && /Drew|Nat/.test(pinOrder[0]), JSON.stringify(pinOrder.slice(0, 3)));
 
   section('MVP counts the money too');
-  await page.locator('#tabs .tab', { hasText:'Sessions' }).click();
+  await goTo(page, 'sessions');
   await page.locator('#panel .card', { hasText:'Mar 8' }).first().click();
   await page.waitForSelector('.sheet .inner');
   const sheetTxt = await page.locator('.sheet .inner').innerText();
@@ -781,7 +957,7 @@ async function browserTests(){
   await page.locator('.sheet .closebtn').first().click();
 
   section('Reading a photo');
-  await page.locator('#tabs .tab', { hasText:'Tonight' }).click();
+  await goTo(page, 'tonight');
   ok('with no reader set up, the site does not offer one',
      await page.locator('button', { hasText:'Read it off a photo' }).count() === 0);
   await page.evaluate(() => {
@@ -827,11 +1003,11 @@ async function browserTests(){
   await page.locator('button.btn.sm', { hasText:'Done' }).click();
 
   section('Phone manners');
-  await page.locator('#tabs .tab', { hasText:/^Me$/ }).click();
+  await goTo(page, 'me');
   const zoom = await page.evaluate(() => [...document.querySelectorAll('#panel input, #panel select')]
     .map(n => parseFloat(getComputedStyle(n).fontSize)).filter(v => v < 16));
   ok('no field small enough to make iOS zoom the page', zoom.length === 0, `${zoom.length} under 16px`);
-  const small = await page.evaluate(() => [...document.querySelectorAll('#tabs .tab, #panel .btn, #panel .seg button')]
+  const small = await page.evaluate(() => [...document.querySelectorAll('#bar button.nav, #panel .btn, #panel .seg button')]
     .map(n => ({ t: n.textContent.trim().slice(0,18), h: Math.round(n.getBoundingClientRect().height) }))
     .filter(x => x.h < 40));
   ok('every button is thumb-sized', small.length === 0, JSON.stringify(small.slice(0,4)));
@@ -849,10 +1025,10 @@ async function browserTests(){
   const anonHome = await anon.locator('#panel').innerText();
   ok('the leaderboard is readable without an account', anonHome.includes('Drew') && /average/i.test(anonHome));
   ok('the trophy case is readable without an account', await (async () => {
-    await anon.locator('#tabs .tab', { hasText:'Records' }).click();
+    await goTo(anon, 'records');
     return /trophy case/i.test(await anon.locator('#panel').innerText());
   })());
-  await anon.locator('#tabs .tab', { hasText:/^Log$/ }).click();
+  await goTo(anon, 'log');
   ok('only logging asks you to sign in',
      /sign in/i.test(await anon.locator('#panel').innerText()));
   ok('signed out, no floating log button', await anon.locator('.sticky-cta').count() === 0);
