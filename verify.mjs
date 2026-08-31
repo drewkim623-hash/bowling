@@ -1192,6 +1192,52 @@ async function browserTests(){
   }
   await goTo(page, 'home');
 
+  section('People');
+  await goTo(page, 'people');
+  {
+    const txt = await page.locator('#panel').innerText();
+    ok('there is a page for the people, not just for the bowling', /everybody in the book/i.test(txt));
+    ok('adding somebody is the first thing on it',
+       await page.locator('#panel button', { hasText:'Add somebody' }).count() === 1);
+
+    const nGuests = await page.evaluate(() => window.APP.state.guests.length);
+    await page.locator('#panel input[type=text]').first().fill('Wanda');
+    await page.locator('#panel button', { hasText:'Add somebody' }).click();
+    await page.waitForTimeout(400);
+    ok('somebody can be added by name alone',
+       await page.evaluate(() => window.APP.state.guests.length) === nGuests + 1);
+    ok('and appears on the page',
+       /Wanda/.test(await page.locator('#panel').innerText()));
+
+    /* rename */
+    const card = page.locator('#panel .card', { hasText:'Wanda' }).first();
+    await card.locator('button', { hasText:'Edit' }).click();
+    await page.waitForTimeout(150);
+    await card.locator('input[type=text]').first().fill('Wanda M');
+    await card.locator('button', { hasText:'Rename' }).click();
+    await page.waitForTimeout(400);
+    ok('a guest can be renamed',
+       await page.evaluate(() => window.APP.state.guests.some(g => g.name === 'Wanda M')));
+
+    /* and deleted */
+    const card2 = page.locator('#panel .card', { hasText:'Wanda M' }).first();
+    await card2.locator('button', { hasText:'Edit' }).click();
+    await page.waitForTimeout(150);
+    await card2.locator('button', { hasText:/^Delete/ }).click();
+    await page.waitForTimeout(400);
+    ok('and deleted',
+       await page.evaluate(() => !window.APP.state.guests.some(g => /^Wanda/.test(g.name))));
+
+    ok('an account is not offered a delete button',
+       await page.evaluate(() => {
+         const me = window.APP.state.me;
+         if (!me) return true;
+         const cards = [...document.querySelectorAll('#panel .card')];
+         const mine = cards.find(c => c.textContent.includes(me.display_name));
+         return !mine || !/Delete /.test(mine.textContent);
+       }));
+  }
+
   section('The archive');
   await goTo(page, 'archive');
   ok('it is listed in the archive',

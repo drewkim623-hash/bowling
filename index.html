@@ -99,6 +99,22 @@ body.focus{padding-bottom:0}
 .golist .s{display:block;margin-top:2px;font-size:12.5px;color:var(--muted);line-height:1.4}
 .golist .chev{margin-left:auto;color:var(--muted);font-size:20px}
 
+/* "you are looking at an old copy of this page" */
+.newer{
+  position:fixed;left:12px;right:12px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:60;
+  display:flex;align-items:center;gap:10px;
+  padding:11px 12px 11px 15px;border-radius:14px;
+  background:var(--blue);color:#fff;font-size:13.5px;font-weight:650;
+  box-shadow:0 10px 30px rgba(0,0,0,.45);
+}
+.newer span{flex:1;min-width:0}
+.newer button{
+  flex:none;padding:7px 13px;border-radius:999px;border:0;cursor:pointer;
+  background:rgba(255,255,255,.22);color:#fff;font-size:13px;font-weight:750;
+}
+.newer button:hover{background:rgba(255,255,255,.32)}
+.newer button.no{padding:7px 10px;background:transparent;font-size:14px}
+
 /* ---- hero ---- */
 /* two soft glows, painted as backgrounds so nothing can spill sideways */
 .hero{position:relative;padding:26px 0 16px;margin:0 calc(-1*var(--pad));padding-left:var(--pad);padding-right:var(--pad);
@@ -1399,6 +1415,10 @@ function stubDB(){
     async magic(){ return {}; },
     async signOut(){ user = null; },
     async saveProfile(patch){ const p = D.profiles.find(x => x.id === user.id); Object.assign(p, patch); },
+    async renameProfile(id, name){
+      const p = D.profiles.find(x => x.id === id);
+      if (p) p.display_name = name.trim();
+    },
     async createSession(row, roster){ D.sessions.push(row); roster.forEach(r => D.players.push({ session_id: row.id, ...r })); },
     async setFinished(id, when){
       const ses = D.sessions.find(x => x.id === id);
@@ -1521,6 +1541,13 @@ async function liveDB(){
     async signOut(){ await sb.auth.signOut(); },
     async saveProfile(patch){
       const { error } = await sb.from('profiles').upsert({ id: state.user.id, ...patch });
+      if (error) throw error;
+    },
+    /* Row level security decides whether this is allowed, not the page: it
+       will go through for your own account, and for anybody's if you are the
+       commissioner. If it is refused, the error says so. */
+    async renameProfile(id, name){
+      const { error } = await sb.from('profiles').update({ display_name: name.trim() }).eq('id', id);
       if (error) throw error;
     },
     async createSession(row, roster){
@@ -5501,6 +5528,32 @@ function tabMe(){
   return box;
 }
 
+/* Is there a newer copy than the one I am holding?
+
+   The site is served with max-age=600, so for ten minutes after a change your
+   phone keeps handing you the old page and nothing about it looks stale — you
+   just cannot find the thing you were told is there. So on start-up it asks
+   the server, without the cache in the way, when this file was last changed.
+   If that is newer than the copy running, it says so and offers to fetch it.
+   One HEAD request, and it fails silently: a bad connection must never put a
+   scary bar across a page that is working. */
+async function checkForNewer(){
+  try {
+    const res = await fetch(location.pathname + '?v=' + Date.now(),
+      { cache:'no-store', method:'HEAD' });
+    const served = Date.parse(res.headers.get('last-modified') || '');
+    const running = Date.parse(document.lastModified);
+    if (!served || !running || served <= running + 2000) return;
+    const bar = h('div.newer', {},
+      h('span', {}, 'A newer version of the site is out.'),
+      h('button', { onclick(){
+        location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
+      } }, 'Load it'),
+      h('button.no', { 'aria-label':'Dismiss', onclick(){ bar.remove(); } }, '\u2715'));
+    document.body.append(bar);
+  } catch { /* offline, or the server will not say — either way, carry on */ }
+}
+
 /* Which copy of the site am I looking at?
 
    GitHub Pages serves this file with max-age=600, so for ten minutes after a
@@ -5518,6 +5571,121 @@ function buildStamp(){
       location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
     } },
     `Updated ${label} \u00b7 tap to check for a newer version`);
+}
+
+/* ---- people: everybody in the book, and the tidying up ----------------
+   All of this existed already, at the bottom of the Money tab, where nobody
+   was ever going to find it. It belongs behind the button on the bar that
+   says People. */
+function tabPeople(){
+  const box = h('div', {});
+  box.append(sectionHead('People',
+    'Everybody in the book. Guests count exactly like accounts \u2014 same record, '
+    + 'same money, same rankings.'));
+
+  /* adding somebody is the thing you do most, so it goes first */
+  const fresh = h('input', { type:'text', placeholder:'name' });
+  box.append(h('div.card', {},
+    h('div.row', {}, fresh,
+      h('button.btn.sm.pri', { style:{ flex:'none' }, async onclick(){
+        const n = fresh.value.trim();
+        if (!n){ toast('Type a name first.'); return; }
+        try {
+          const g = await db.addGuest(n);
+          await load(); fresh.value = '';
+          toast(`${g.name} is in`); render();
+        } catch (err){ toast(saveError(err)); }
+      } }, 'Add somebody')),
+    h('p.tiny.muted', { style:{ marginTop:'8px' } },
+      'Somebody added by name is a guest. They do not need an account and most '
+      + 'people never get one \u2014 it makes no difference to anything the book counts.')));
+
+  const everyone = everyPersonKey().map(moneyRecord)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (!everyone.length){
+    box.append(h('p.empty', {}, 'Nobody yet. Add the first name above.'));
+    return box;
+  }
+
+  box.append(sectionHead('Everyone', `${everyone.length} in the book.`));
+  for (const r of everyone){
+    const editing = h('div', { style:{ display:'none' } });
+    const nameInput = h('input', { type:'text', value:r.name });
+    const mine = !r.guest && state.user && r.key === keyOfProfile(state.user.id);
+    const canRename = r.guest || mine || isBoss();
+
+    /* renaming works the same either way, so the button does not have to care */
+    const doRename = async () => {
+      const n = nameInput.value.trim();
+      if (!n){ toast('A name cannot be empty.'); return; }
+      if (n === r.name){ toast('That is already their name.'); return; }
+      try {
+        if (r.guest) await db.renameGuest(r.key.slice(2), n);
+        else await db.renameProfile(r.key.slice(2), n);
+        await load(); toast(`Now ${n}`); render();
+      } catch (err){ toast(saveError(err)); }
+    };
+
+    editing.append(h('div.row', { style:{ marginTop:'12px' } }, nameInput,
+      h('button.btn.sm', { style:{ flex:'none' }, onclick: doRename }, 'Rename')));
+
+    if (r.guest){
+      /* the good ending for a guest: their whole history moves onto the
+         account they finally made, rather than being thrown away */
+      const accounts = state.profiles.filter(p => keyOfProfile(p.id) !== r.key);
+      if (accounts.length){
+        const pick = h('select', {}, h('option', { value:'' }, 'if they made an account\u2026'),
+          [...accounts].sort((a, b) => a.display_name.localeCompare(b.display_name))
+            .map(p => h('option', { value:p.id }, p.display_name)));
+        editing.append(h('div.row', { style:{ marginTop:'8px' } }, pick,
+          h('button.btn.sm', { style:{ flex:'none' }, async onclick(){
+            if (!pick.value){ toast('Pick an account first.'); return; }
+            const who = D.profile.get(pick.value);
+            if (!confirm(`Move everything ${r.name} has won and lost onto `
+              + `${who.display_name}? ${r.name} then goes away.`)) return;
+            try {
+              await mergeGuestInto(r.key.slice(2), pick.value);
+              toast(`${r.name} is now ${who.display_name}`); render();
+            } catch (err){ toast(saveError(err)); }
+          } }, 'Merge')));
+      }
+      editing.append(h('button.btn.wide.danger', { style:{ marginTop:'10px' }, async onclick(){
+        if (!confirm(r.nights
+          ? `Delete ${r.name}? Their ${r.nights} night${r.nights === 1 ? '' : 's'} and `
+            + `${money(r.net)} go with them, and that does not come back. `
+            + 'If they have just made an account, merge instead.'
+          : `Delete ${r.name}?`)) return;
+        try { await db.deleteGuest(r.key.slice(2)); await load(); toast('Gone'); render(); }
+        catch (err){ toast(saveError(err)); }
+      } }, `Delete ${r.name}`));
+    } else {
+      editing.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
+        'This is an account, so it can only be removed by whoever it belongs to. '
+        + 'Their nights stay in the book either way.'));
+    }
+
+    box.append(h('div.card', {},
+      h('div.spread', {},
+        h('div.row', { style:{ minWidth:0 } },
+          r.profile ? avatar(r.profile) : nameChip(r.name),
+          h('div', { style:{ minWidth:0 } },
+            h('div', { style:{ fontWeight:700 } }, r.name,
+              r.guest ? h('span.tiny.muted', {}, '  guest') : null),
+            h('div.tiny.muted', {}, r.played
+              ? `${wl(r)} \u00b7 ${r.nights} night${r.nights === 1 ? '' : 's'}`
+              : 'no games yet'))),
+        h('div.row', {},
+          moneyPill(r.net),
+          canRename ? h('button.btn.sm', { onclick(e){
+            const on = editing.style.display === 'none';
+            editing.style.display = on ? 'block' : 'none';
+            e.currentTarget.textContent = on ? 'Done' : 'Edit';
+          } }, 'Edit') : null)),
+      !r.guest ? h('button.btn.sm.wide', { style:{ marginTop:'10px' },
+        onclick(){ showBowler(r.key.slice(2)); } }, 'Their whole story') : null,
+      editing));
+  }
+  return box;
 }
 
 /* ---- the archive: nights that are out of the book but not gone ---- */
@@ -5580,6 +5748,7 @@ const TABS = [
   ['me',       'Me',       tabMe],
   ['stats',    'Stats',    tabStats],
   ['archive',  'Archive',  tabArchive],
+  ['people',   'People',   tabPeople],
 ];
 
 /* ---- the four places, and what lives inside each ----------------------
@@ -5611,7 +5780,7 @@ const PLACES = [
   { id:'home',   label:'Home',   icon:'home',   holds:['home'] },
   { id:'stats',  label:'Stats',  icon:'stats',  holds:['stats','power','records','teams','sessions','log','archive'] },
   { id:'money',  label:'Money',  icon:'money',  holds:['money','tonight'] },
-  { id:'people', label:'People', icon:'people', holds:['bowlers','me'], goes:'bowlers' },
+  { id:'people', label:'People', icon:'people', holds:['people','bowlers','me'] },
 ];
 
 /* Everything that used to be its own tab, now one page you go through. */
@@ -5620,6 +5789,7 @@ const STATS_PAGES = [
   ['teams',    '\u{1f91d}', 'Teams',          'Who you win with, read off the money'],
   ['records',  '\u{1f3c6}', 'Records',        'The money records, and the trophy case'],
   ['sessions', '\u{1f4c5}', 'Sessions',       'Every night out, one card each, all the way back'],
+  ['bowlers',  '\u{1f3b3}', 'Bowlers',        'Averages, strikes and spares, for whoever logs them'],
   ['log',      '\u270f\ufe0f', 'Log a session',  'Score it live, or type one up after'],
   ['archive',  '\u{1f4e6}', 'Archive',        'Nights you put away, and can bring back'],
 ];
@@ -5709,6 +5879,7 @@ async function boot(reload){
   state.ready = true;
   render();
   document.body.dataset.ready = '1';
+  if (!STUB) checkForNewer();
 }
 window.addEventListener('hashchange', () => {
   const hash = location.hash.slice(1);
