@@ -210,11 +210,20 @@ It needs one column, which older databases will not have. In Supabase →
 
 ```sql
 alter table sessions add column if not exists finished_at timestamptz;
+alter table sessions add column if not exists archived_at timestamptz;
 ```
 
-Until you run it, finishing still works but only on the device you pressed it on,
-and the page says so underneath. Once it is there, you finish the night on your
-phone and it is finished on everybody's.
+Until you run them, finishing and putting a night away still work but only on the
+device you did it on. Once they are there, you finish or archive a night on your
+phone and it is done for everybody.
+
+## Putting a night away
+
+The button at the foot of a night's book does not delete it. It puts the night in
+the **archive**: out of the book, out of everybody's totals, counting for nothing —
+but nothing is destroyed, and it can be brought straight back. The archive lives
+under Stats, and it is the only place on the site with a button that really does
+destroy something.
 
 ## The write-up
 

@@ -1049,6 +1049,71 @@ async function browserTests(){
   }
   await goTo(page, 'home');
 
+  section('Things you should not have to hunt for');
+  await goTo(page, 'tonight');
+  const nn = page.locator('#panel .nightrow button.card').first();
+  if (await nn.count()){
+    await nn.click();
+    await page.waitForSelector('#panel .gamecard');
+    ok('who is up is a button you can see, not a tap you have to guess',
+       await page.locator('#panel button', { hasText:'Who is up' }).count() === 1);
+    ok('so is sending it to the group',
+       await page.locator('#panel button', { hasText:'Send to the group' }).count() === 1);
+    ok('and the night can be put away from inside the night',
+       await page.locator('#panel button', { hasText:'Put this night away' }).count() === 1);
+
+    await page.locator('#panel .flowhead button', { hasText:'Done' }).click();
+    await page.waitForTimeout(250);
+  }
+
+  /* Put away a night of its own rather than one the later sections are using. */
+  await goTo(page, 'tonight');
+  await page.locator('#panel .person').first().click();
+  await page.locator('#panel button.btn.pri', { hasText:'Start keeping the book' }).click();
+  await page.waitForSelector('#panel .gamecard');
+  const doomed = await page.evaluate(() => localStorage.getItem('bowl.money.night'));
+  const before2 = await page.evaluate(() => window.APP.state.sessions.length);
+  await page.locator('#panel button', { hasText:'Put this night away' }).click();
+  await page.waitForTimeout(600);
+  ok('putting a night away takes it out of the book',
+     await page.evaluate(s2 => !window.APP.state.sessions.some(x => x.id === s2), doomed));
+  ok('one night, not all of them',
+     await page.evaluate(() => window.APP.state.sessions.length) === before2 - 1);
+  ok('and out of every total',
+     await page.evaluate(s2 => !window.APP.state.money.some(m => m.session_id === s2), doomed));
+  ok('leaving you somewhere sensible',
+     await page.evaluate(() => location.hash === '#tonight'));
+  /* but nothing has actually been destroyed */
+  ok('while the night itself still exists',
+     await page.evaluate(s2 => window.APP.state.all.sessions.some(x => x.id === s2), doomed));
+
+  section('The archive');
+  await goTo(page, 'archive');
+  ok('it is listed in the archive',
+     (await page.locator('#panel').innerText()).length > 40
+     && await page.locator('#panel .card').count() >= 1);
+  await page.locator('#panel button', { hasText:'Bring it back' }).first().click();
+  await page.waitForTimeout(500);
+  ok('and it can be brought back into the book',
+     await page.evaluate(s2 => window.APP.state.sessions.some(x => x.id === s2), doomed));
+
+  /* only then, the one button that really does destroy something */
+  await goTo(page, 'tonight');
+  await page.locator('#panel .nightrow button.xbtn').first().click();
+  await page.waitForTimeout(500);
+  await goTo(page, 'archive');
+  const gone = await page.evaluate(() => (window.APP.state.archivedSessions || [])[0]?.id);
+  await page.locator('#panel button', { hasText:'Delete for good' }).first().click();
+  await page.waitForTimeout(500);
+  ok('deleting for good really is for good',
+     await page.evaluate(g => !window.APP.state.all.sessions.some(x => x.id === g), gone));
+
+  section('Which copy am I looking at');
+  await goTo(page, 'me');
+  const stamp = page.locator('#panel button', { hasText:/Updated .* tap to check/ });
+  ok('the page says when it was last deployed', await stamp.count() === 1,
+     await page.locator('#panel').innerText().then(t => t.slice(-160)));
+
   section('Sending it to the group');
   await goTo(page, 'tonight');
   const nightForShare = page.locator('#panel .nightrow button.card').first();

@@ -327,6 +327,15 @@ input:focus,select:focus{border-color:var(--blue)}
 .bigup .sep{grid-column:1/-1;height:1px;background:var(--grid);margin:2px 0}
 .moneystrip::-webkit-scrollbar{display:none}
 .balwarn{font-size:11.5px;color:var(--hold);margin-top:8px}
+/* one tap instead of a keyboard: the four numbers that come up every week */
+.quickamt{display:flex;gap:5px;grid-column:2/-1;margin:-2px 0 4px}
+.quickamt button{
+  flex:1;padding:7px 0;border-radius:9px;border:1px solid var(--ring);background:var(--raised);
+  color:var(--ink-2);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;cursor:pointer;
+}
+.quickamt button:hover{background:var(--hover)}
+.quickamt button.on{border-color:var(--blue);background:rgba(57,135,229,.2);color:#a8cbf5}
+.quickamt button.zero{color:var(--muted)}
 .recrow{display:grid;grid-template-columns:1fr 70px auto auto;gap:12px;align-items:center;
   padding:11px 0;border-bottom:1px solid var(--grid)}
 .recrow:last-child{border-bottom:0}
@@ -1383,6 +1392,11 @@ function stubDB(){
       if (ses) ses.finished_at = when;
       return true;
     },
+    async setArchived(id, when){
+      const ses = D.sessions.find(x => x.id === id);
+      if (ses) ses.archived_at = when;
+      return true;
+    },
     async saveGame(game, rs, prev){
       const i = D.games.findIndex(g => g.id === game.id);
       if (i >= 0){
@@ -1525,6 +1539,12 @@ async function liveDB(){
       if (error) throw error;
       return true;
     },
+    async setArchived(id, when){
+      const { error } = await sb.from('sessions').update({ archived_at: when }).eq('id', id);
+      if (error && /archived_at/.test(error.message || '')) return false;
+      if (error) throw error;
+      return true;
+    },
     async deleteSession(id){
       const { error } = await sb.from('sessions').delete().eq('id', id);   // games and rolls cascade
       if (error) throw error;
@@ -1581,9 +1601,55 @@ async function liveDB(){
 }
 
 let db = null;
+/* ---- putting a night away ---------------------------------------------
+   Deleting a night takes everybody's money for it with them and there is no
+   getting it back, which is a lot of weight on one tap in a bowling alley at
+   eleven at night. So the button puts the night away instead: out of the book,
+   out of every total, and sitting in the archive until somebody either brings
+   it back or deliberately destroys it.
+
+   Like finishing, this wants a column the owner has to add by hand, so until
+   they do it is remembered on this device — the night still disappears from
+   the book, it just does not disappear from everybody else's. */
+const ARCHIVE_KEY = 'bowl.archived';
+function localArchive(){
+  try { return new Set(JSON.parse(localStorage.getItem(ARCHIVE_KEY) || '[]')); }
+  catch { return new Set(); }
+}
+function rememberArchived(id, on){
+  const set = localArchive();
+  on ? set.add(id) : set.delete(id);
+  try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify([...set])); } catch {}
+}
+async function setArchived(id, on){
+  const when = on ? new Date().toISOString() : null;
+  let shared = false;
+  try { shared = db.setArchived ? await db.setArchived(id, when) : false; } catch (err){ throw err; }
+  if (!shared) rememberArchived(id, on);
+  else rememberArchived(id, false);        // the database is keeping it now
+  await load();
+  return shared;
+}
+
 async function load(){
   const d = await db.loadAll();
   Object.assign(state, d);
+  /* Everything downstream — every tab, every total, every record — reads the
+     filtered lists, so a night in the archive is simply not in the book. The
+     originals stay on state.all for the archive tab itself. */
+  const put = localArchive();
+  const away = new Set(d.sessions.filter(x => x.archived_at || put.has(x.id)).map(x => x.id));
+  state.all = d;
+  state.archivedSessions = d.sessions.filter(x => away.has(x.id))
+    .sort((a, b) => b.played_on.localeCompare(a.played_on));
+  if (away.size){
+    state.sessions = d.sessions.filter(x => !away.has(x.id));
+    state.money    = d.money.filter(m => !away.has(m.session_id));
+    state.games    = d.games.filter(g => !away.has(g.session_id));
+    state.players  = d.players.filter(p => !away.has(p.session_id));
+    const goneGames = new Set(d.games.filter(g => away.has(g.session_id)).map(g => g.id));
+    state.rolls    = d.rolls.filter(r => !goneGames.has(r.game_id));
+  }
   state.me = state.profiles.find(p => p.id === (state.user?.id)) || null;
   derive();
 }
@@ -2076,7 +2142,8 @@ function divergingBars(items){
     const row = h('div.barrow', {},
       h('div.lb2', {}, i.label),
       h('div.dvg', {}, bar),
-      h('div.val.n', { cls: i.value >= 0 ? 'good' : 'bad' }, (i.value >= 0 ? '+' : '') + one(i.value)));
+      h('div.val.n', { cls: i.value >= 0 ? 'good' : 'bad' },
+        (i.value >= 0 ? '+' : '') + one(i.value) + (i.unit || '')));
     return tip(row, i.tipText || `${i.label}: ${(i.value >= 0 ? '+' : '') + one(i.value)}`);
   }));
 }
@@ -3256,6 +3323,7 @@ function tabHome(){
       h('button.btn.sm', { style:{ marginTop:'12px' }, onclick(){ go('log'); } },
         'Log one anyway')));
     box.append(glossary(MONEY_GLOSS));
+    box.append(buildStamp());
     return box;
   }
 
@@ -4084,6 +4152,15 @@ function moneyLedger(ses){
   document.addEventListener('visibilitychange', flushNow);
   window.addEventListener('pagehide', flushNow);
 
+  /* What actually gets typed, week in week out. Four buttons beats a number
+     pad, and the keyboard covering half the screen is most of why keeping the
+     book on a phone is annoying. */
+  const QUICK = [-1000, -500, 0, 500, 1000];
+  const quickKey = 'bowl.money.quickamt';
+  let quickAmounts = (() => {
+    try { return localStorage.getItem(quickKey) !== '0'; } catch { return true; }
+  })();
+
   function gameCard(n){
     const cardEl = h('div.card.gamecard', {});
     const marks = new Map();
@@ -4095,6 +4172,13 @@ function moneyLedger(ses){
       cardEl.append(h('div.spread', {},
         h('div.up', {}, 'Game ' + n),
         h('div.row', {},
+          h('button.btn.sm' + (quickAmounts ? '.on' : ''), {
+            'aria-pressed': String(quickAmounts),
+            onclick(){
+              quickAmounts = !quickAmounts;
+              try { localStorage.setItem(quickKey, quickAmounts ? '1' : '0'); } catch {}
+              drawGames();
+            } }, '\u26a1'),
           h('button.btn.sm', { onclick(){ showQuick = !showQuick; drawCard(); } }, 'Quick fill'),
           h('button.rm', { 'aria-label':'Clear game ' + n, async onclick(){
             if (!confirm(`Clear game ${n}? Everything typed for it goes.`)) return;
@@ -4160,6 +4244,17 @@ function moneyLedger(ses){
           h('span.tiny', { cls: t ? (t.won ? 'good' : 'bad') : 'muted' },
             t ? (t.won ? 'won' : 'lost') : 'sat out'),
           h('div.amt', {}, input)));
+        if (quickAmounts)
+          led.append(h('div.quickamt', {}, QUICK.map(cents =>
+            h('button' + (v === cents ? '.on' : '') + (cents === 0 ? '.zero' : ''), {
+              'aria-label': `${personName(k)} ${cents === 0 ? 'level' : money(cents)}`,
+              onclick(){
+                /* tapping the one already showing clears it, so a mis-tap is
+                   one tap to undo rather than a trip to the keyboard */
+                draft.set(n + '|' + k, v === cents ? 0 : cents);
+                drawTotals(); save(n); drawCard();
+              } },
+              cents === 0 ? '\u2013' : (cents > 0 ? '+' : '\u2212') + Math.abs(cents / 100)))));
       }
       cardEl.append(led);
       cardEl.append(sidesLine(out));
@@ -4201,6 +4296,13 @@ function moneyLedger(ses){
     h('button.btn.sm', { onclick(){ closeMoneyNight(); } }, 'Done')));
   drawTotals();
   box.append(strip);
+
+  /* The same two things are on the big totals view, but only if you knew to
+     tap the strip to find it — which nobody does. So they are also here, in
+     plain sight, at the top of the night where you are when somebody asks. */
+  box.append(h('div.grid2', { style:{ margin:'2px 0 10px' } },
+    h('button.btn', { onclick(){ whosUp(); } }, '\u{1f440}  Who is up'),
+    h('button.btn', { onclick(){ sendToGroup(standingsText()); } }, '\u{1f4f2}  Send to the group')));
 
   if (canReadPhotos()){
     box.append(h('button.btn.wide', { style:{ margin:'4px 0 10px' }, onclick(){
@@ -4363,6 +4465,23 @@ function moneyLedger(ses){
   box.append(square);
   box.append(h('p.tiny.muted', { style:{ marginTop:'10px' } },
     'Saved as you type. This night stays in the book — open it again any time from the Money tab.'));
+
+  /* Binning a night used to mean backing out to the Tonight tab and finding
+     the right ✕ in a list. If it is the night in front of you, it should be
+     binnable from the night in front of you. */
+  box.append(h('button.btn.wide', { style:{ marginTop:'14px' }, async onclick(){
+    if (!confirm(`Put the night of ${dateLabel(ses.played_on)} away?`
+      + '\n\nIt comes out of the book and out of everybody\u2019s totals. '
+      + 'Nothing is destroyed \u2014 it sits in the archive and you can bring it back.')) return;
+    try {
+      try { localStorage.removeItem('bowl.money.night'); } catch {}
+      closeMoneyNight();
+      await setArchived(ses.id, true);
+      toast('Put away. It is in the archive.');
+      go('tonight');
+    } catch (err){ toast(saveError(err)); }
+  } }, '\u{1f4e6}  Put this night away'));
+
   box.append(glossary(MONEY_GLOSS));
   return box;
 }
@@ -4672,21 +4791,19 @@ function tabTonight(){
               h('div.tiny.muted', {}, ses.house)),
             h('span.chip', { cls: ses.finished_at ? 'on' : '' },
               ses.finished_at ? 'finished' : cash.length ? 'has a book' : 'no money yet'))),
-        h('button.xbtn', { 'aria-label':`Delete the night of ${dateLabel(ses.played_on)}`,
-          title:'Delete this night', async onclick(){
-            /* Say out loud everything that goes, because none of it comes back. */
-            const bits = [];
-            if (games) bits.push(`${games} game${games > 1 ? 's' : ''}`);
-            if (cash.length) bits.push('the money book');
-            if (!confirm(`Delete the night of ${dateLabel(ses.played_on)} at ${ses.house}?`
-                + (bits.length ? `\n\nThis takes ${bits.join(' and ')} with it.` : '')
-                + '\n\nThis cannot be undone.')) return;
+        /* Puts it away rather than destroys it — an ✕ next to a night's takings
+           is far too small a thing for something that cannot be undone. */
+        h('button.xbtn', { 'aria-label':`Put away the night of ${dateLabel(ses.played_on)}`,
+          title:'Put this night away', async onclick(){
+            if (!confirm(`Put the night of ${dateLabel(ses.played_on)} at ${ses.house} away?`
+                + '\n\nIt comes out of the book and out of everybody\u2019s totals. '
+                + 'Nothing is destroyed \u2014 you can bring it back from the archive.')) return;
             try {
-              await db.deleteSession(ses.id);
               if (localStorage.getItem('bowl.money.night') === ses.id) localStorage.removeItem('bowl.money.night');
-              await load(); toast('Night deleted'); render();
+              await setArchived(ses.id, true);
+              toast('Put away. It is in the archive.'); render();
             } catch (err){ toast(saveError(err)); }
-          } }, '✕')));
+          } }, '📦')));
     }
   }
   return box;
@@ -5193,7 +5310,7 @@ function tabTeams(){
       + 'the other. A pair on +20 win twenty games in a hundred more often side '
       + 'by side than they manage apart; a pair on \u221220 are better off split up.'));
     box.append(card(divergingBars(pairs.filter(p => p.delta != null).map(p => ({
-      label: `${p.nameA}+${p.nameB}`, value: p.delta,
+      label: `${p.nameA}+${p.nameB}`, value: p.delta, unit:' pts',
       tipText: `${p.nameA} + ${p.nameB} win ${pc(p.together)} of the ${p.n} games they `
              + `have bowled on the same side. Without each other they win `
              + `${pc(p.apart)} — ${p.nameA} ${pc(p.soloA)}, ${p.nameB} ${pc(p.soloB)}.`,
@@ -5328,6 +5445,70 @@ function tabMe(){
   box.append(glossary([GLOSS.hcap, GLOSS.quick,
     ['Editing', 'You can change or delete any game you bowled or any game you logged for someone else. The original is kept and shown in the history — that is the deal.'],
   ]));
+  box.append(buildStamp());
+  return box;
+}
+
+/* Which copy of the site am I looking at?
+
+   GitHub Pages serves this file with max-age=600, so for ten minutes after a
+   change your phone is still holding the old one and there is no way to tell
+   by looking. document.lastModified is the Last-Modified the file was served
+   with — the moment it was actually deployed — so this stamp says which build
+   is in front of you, and tapping it forces a fresh copy. */
+function buildStamp(){
+  const when = new Date(document.lastModified);
+  const label = isNaN(when) ? 'unknown' : when.toLocaleString(undefined,
+    { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+  return h('button.btn.sm.wide', { style:{ marginTop:'18px', opacity:'.7' },
+    onclick(){
+      /* a plain reload will happily serve the same cached file back */
+      location.replace(location.pathname + '?fresh=' + Date.now() + location.hash);
+    } },
+    `Updated ${label} \u00b7 tap to check for a newer version`);
+}
+
+/* ---- the archive: nights that are out of the book but not gone ---- */
+function tabArchive(){
+  const box = h('div', {});
+  const put = state.archivedSessions || [];
+  box.append(sectionHead('Archive',
+    'Nights that are out of the book. They count for nothing \u2014 no records, no '
+    + 'totals, no rankings \u2014 but nothing has been destroyed, and any of them can '
+    + 'come back.'));
+  if (!put.length){
+    box.append(h('p.empty', {}, 'Nothing has been put away.'));
+    return box;
+  }
+  for (const ses of put){
+    const cash = (state.all.money || []).filter(m => m.session_id === ses.id);
+    const games = new Set(cash.map(m => m.game_no)).size;
+    const moved = cash.filter(m => m.amount_cents > 0).reduce((a, m) => a + m.amount_cents, 0);
+    box.append(h('div.card', {},
+      h('div.spread', {},
+        h('div', {}, h('div', { style:{ fontWeight:700 } }, dateLabel(ses.played_on)),
+          h('div.tiny.muted', {}, `${ses.house}${ses.title ? ' · ' + ses.title : ''}`)),
+        h('span.chip', {}, games ? `${games} game${games === 1 ? '' : 's'}` : 'nothing in it')),
+      moved ? h('p.tiny.muted', { style:{ marginTop:'6px' } },
+        `${moneyFlat(moved)} changed hands that night.`) : null,
+      h('div.grid2', { style:{ marginTop:'12px' } },
+        h('button.btn.sm', { async onclick(){
+          try {
+            await setArchived(ses.id, false);
+            toast('Back in the book'); render();
+          } catch (err){ toast(saveError(err)); }
+        } }, '\u21a9\ufe0f  Bring it back'),
+        /* the only place in the site that destroys anything, and it says so */
+        h('button.btn.sm.danger', { async onclick(){
+          if (!confirm(`Destroy the night of ${dateLabel(ses.played_on)} for good?`
+            + '\n\nThis is the one that does not come back.')) return;
+          try {
+            await db.deleteSession(ses.id);
+            rememberArchived(ses.id, false);
+            await load(); toast('Gone for good'); render();
+          } catch (err){ toast(saveError(err)); }
+        } }, 'Delete for good'))));
+  }
   return box;
 }
 
@@ -5346,6 +5527,7 @@ const TABS = [
   ['teams',    'Teams',    tabTeams],
   ['me',       'Me',       tabMe],
   ['stats',    'Stats',    tabStats],
+  ['archive',  'Archive',  tabArchive],
 ];
 
 /* ---- the four places, and what lives inside each ----------------------
@@ -5375,7 +5557,7 @@ const icon = name => svgEl('svg', { class:'ic', viewBox:'0 0 24 24' },
 
 const PLACES = [
   { id:'home',   label:'Home',   icon:'home',   holds:['home'] },
-  { id:'stats',  label:'Stats',  icon:'stats',  holds:['stats','power','records','teams','sessions','log'] },
+  { id:'stats',  label:'Stats',  icon:'stats',  holds:['stats','power','records','teams','sessions','log','archive'] },
   { id:'money',  label:'Money',  icon:'money',  holds:['money','tonight'] },
   { id:'people', label:'People', icon:'people', holds:['bowlers','me'], goes:'bowlers' },
 ];
@@ -5387,6 +5569,7 @@ const STATS_PAGES = [
   ['records',  '\u{1f3c6}', 'Records',        'The money records, and the trophy case'],
   ['sessions', '\u{1f4c5}', 'Every night',    'One card each, all the way back'],
   ['log',      '\u270f\ufe0f', 'Log a session',  'Score it live, or type one up after'],
+  ['archive',  '\u{1f4e6}', 'Archive',        'Nights you put away, and can bring back'],
 ];
 function tabStats(){
   const box = h('div', {});

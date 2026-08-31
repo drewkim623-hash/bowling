@@ -50,10 +50,14 @@ create table if not exists sessions (
   -- When somebody pressed Finish. It locks nothing: the book stays editable
   -- afterwards and this only stops the night offering itself back as still
   -- open. Nullable because most nights never get finished, they just stop.
-  finished_at timestamptz
+  finished_at timestamptz,
+  -- When somebody put the night away. Archived nights are out of the book and
+  -- out of every total, but nothing is destroyed and they can be brought back.
+  archived_at timestamptz
 );
--- for a database created before finishing existed
+-- for a database created before these existed
 alter table sessions add column if not exists finished_at timestamptz;
+alter table sessions add column if not exists archived_at timestamptz;
 create index if not exists sessions_played_on_idx on sessions (played_on desc);
 
 -- Teams are per session and ad hoc. The same two people can be teammates one
