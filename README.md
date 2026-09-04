@@ -39,8 +39,33 @@ Four things to do. Twenty minutes, most of it waiting.
 That one file creates every table, every rule about who is allowed to change what, and the
 trigger that writes down every edit anyone ever makes.
 
-**The commissioner.** The very first account to sign up becomes the commissioner — that will
-be you. A commissioner can fix or delete anybody's games and any whole session, which is for
+### 2b. Let people in without an account
+
+Nobody should have to invent a password to write down that they lost four dollars. Supabase can
+hand out an identity to somebody who has not signed up for anything, and this is switched off
+until you say otherwise:
+
+1. **Authentication** in the left sidebar → **Sign In / Providers**.
+2. Turn on **Anonymous sign-ins**. Save.
+
+Until you do, the front door still draws itself but nothing behind it works — tapping a name
+comes back saying anonymous sign-ins are switched off, and pointing here.
+
+What it buys you: the home page opens with **Who is bowling?**, everybody the book already
+knows laid out to be tapped. Somebody new types a name and is straight in. There is no email,
+no password, no confirmation link. They get a real row in the database like anybody else, and
+every rule about who may change what applies to them unchanged.
+
+**It lives in the browser and nowhere else.** That is the whole cost. Clear your site data or
+pick up a different phone and you are a stranger again — your games stay in the book under your
+name with nobody able to edit them. The **Me** tab offers anyone in that position an email and
+a password, which upgrades the account in place: same profile, same history, nothing moves.
+Worth doing for anyone who turns up twice.
+
+**The commissioner.** The very first profile to exist becomes the commissioner — that will be
+you, so sign yourself in before you hand the address around. The bar is a tapped name now, not
+a confirmed email, so on a brand new database whoever gets there first gets the keys. A
+commissioner can fix or delete anybody's games and any whole session, which is for
 the night somebody types 132 instead of 213 and then goes home. It is not a quiet power: every
 change a commissioner makes lands in the same visible history as everyone else's, with their
 name on it. Nobody can promote themselves; the database refuses it. To hand the job over, or
@@ -114,6 +139,24 @@ updates about a minute after you push.
 
 ## Using it
 
+**Saying who you are.** The home page opens with **Who is bowling?** — every name the book
+knows, waiting to be tapped. What a tap does depends on what it would cost to be wrong about
+somebody:
+
+- **A guest** — somebody who has been bowling on your tab as a name and nothing else — asks
+  you to confirm first, telling you exactly what you are taking on (*"Everything the book has
+  under Mike — −$40 across 6 nights — becomes yours"*), and then that placeholder and you
+  become one person. His money lands on your account and Mike stops being a guest.
+- **An account this phone has signed in before** goes straight in, no password. The phone
+  keeps a small ring of everyone who has signed in on it, which is what you want for the phone
+  that gets passed down the lane, and is not what you want on a borrowed one — **Sign out and
+  forget me here**, on the Me tab, empties it.
+- **Any other account** asks for the email and password. A name on a list is not a way in.
+- **Nobody on the list?** *I am not on this list* → type a name → in.
+
+None of this gates reading. The leaderboard, the money book and the trophy case are open to
+anyone who has the address, signed in or not, exactly as before.
+
 **Logging scores.** Tap **Log**. You start with the session — the date, the alley, who
 bowled, and whether you split into teams. Then pick how you want to do it:
 
@@ -168,6 +211,18 @@ Every number stays an ordinary box you can type over. The quick fill is a shortc
 rule, and nothing you typed is ever recalculated behind your back. If a game does not come to
 zero the site says so and leaves it alone — uneven sides do that, and sometimes somebody
 covers the difference.
+
+**A nought and an empty box are two different things.** Type **0** and that person bowled the
+game and came out level — they are in the teams, in the record, and in the win-loss line as a
+third figure (`4–2–1` is four won, two lost, one level). Leave the box **empty** and they were
+not in that game at all. It only reads as sitting out if there is no number there. This matters
+most on a **three-way night**: 2v2v2 settled by placement pays the top side, takes off the
+bottom side, and leaves the middle on nothing — and the middle side bowled.
+
+**Sides beyond two.** 3v3, 2v2v2, four ways, any of it. The sides are read off the numbers —
+same amount, same side — so the book works out three teams from a three-way game without being
+told. A game with more than two sides says *"Drew & Nat came away up · Tony & Steve paid for
+it"* rather than pretending it was head to head.
 
 Two tabs, because they are two different jobs:
 

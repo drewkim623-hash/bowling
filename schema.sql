@@ -210,7 +210,12 @@ language plpgsql security definer set search_path = public as $$
 begin
   insert into profiles (id, display_name, is_admin)
   values (new.id,
-          coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email,'@',1)),
+          -- Somebody who walked in without an account has no email to fall
+          -- back on, and display_name is not null. Without the last rung of
+          -- this ladder the insert fails and the sign-in fails with it.
+          coalesce(nullif(trim(coalesce(new.raw_user_meta_data->>'display_name',
+                                        split_part(coalesce(new.email, ''), '@', 1))), ''),
+                   'Bowler'),
           not exists (select 1 from profiles where is_admin))
   on conflict (id) do nothing;
   return new;
@@ -235,6 +240,50 @@ create trigger profiles_guard_admin before update on profiles
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function handle_new_user();
+
+-- ------------------------------------------------------------ claiming
+-- A guest is a name somebody typed so that "Mike owes twenty dollars" would
+-- survive the week. When Mike finally turns up and taps his own name, that
+-- placeholder and the person become one: his money moves onto his account
+-- and the guest row goes away.
+--
+-- This has to run as the owner. The money rows being rewritten were created
+-- by whoever was keeping the book that night, so money_update refuses them
+-- to Mike, who is neither its author, the session's creator, nor the
+-- commissioner. The policies are right; this is the one sanctioned way past
+-- them, and it can only ever move money onto the caller's own account.
+create or replace function claim_guest(g uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid();
+begin
+  if me is null then
+    raise exception 'nobody is signed in';
+  end if;
+  if not exists (select 1 from guests where id = g) then
+    raise exception 'that guest is already gone';
+  end if;
+
+  -- If the book ever gave one game money for both guest-Mike and account-Mike,
+  -- the rewrite would collide with money_one_per_game. The guest row is the
+  -- placeholder, so it is the one that loses.
+  delete from money m
+   where m.guest_id = g
+     and m.game_no is not null
+     and exists (select 1 from money k
+                  where k.profile_id = me and k.session_id = m.session_id
+                    and k.game_no = m.game_no);
+
+  update money set profile_id = me, guest_id = null where guest_id = g;
+
+  -- Take the name too, unless this account already picked one for itself.
+  update profiles p set display_name = (select name from guests where id = g)
+   where p.id = me and (p.display_name is null or p.display_name = 'Bowler');
+
+  delete from guests where id = g;
+end $$;
+
+revoke all on function claim_guest(uuid) from public;
+grant execute on function claim_guest(uuid) to authenticated;
 
 -- =====================================================================
 --  Row level security. The anon key in index.html is public knowledge —

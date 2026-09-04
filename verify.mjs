@@ -295,9 +295,15 @@ section('Reading the sides off the money');
   eq('and anyone down lost it', free.losers.join(), 'tony,steve');
   ok('four sides is not a head to head', !free.headToHead);
 
+  /* Nought is a result — you bowled and came out level. Sitting a game out is
+     having no row in it at all, which the ledger works out from the roster. */
   const sat = B.teamsFromMoney(C({ drew:500, nat:-500, bruce:0 }));
-  eq('nought means you sat it out', sat.sat.join(), 'bruce');
-  ok('and it puts you on neither side', !sat.winners.includes('bruce') && !sat.losers.includes('bruce'));
+  eq('nought means you came out level, not that you sat out', sat.evens.join(), 'bruce');
+  eq('and it is not filed as sitting out', sat.sat.length, 0);
+  ok('level is neither winning nor losing',
+     !sat.winners.includes('bruce') && !sat.losers.includes('bruce'));
+  ok('but it is a side of its own', sat.teams.length === 3);
+  ok('so it is not a head to head', !sat.headToHead);
 
   const off = B.teamsFromMoney(C({ drew:500, nat:500, tony:-500, steve:-300 }));
   ok('a game that does not add to nothing still reads', off.teams.length === 3);
@@ -418,15 +424,22 @@ section('Where you finished, not just whether you were up');
   eq('both winners score the same', twoUp.a, twoUp.b);
 
   const three = score({ a:1000, b:0, c:-1000 });
-  eq('the middle of three is halfway', three.b === undefined ? null : three.b, null);
+  eq('the middle of three is halfway', three.b, 0.5);
+  eq('even when the middle came out level', three.a, 1);
 
   const mid = score({ a:1000, b:500, c:-1500 });
   eq('three sides: top', mid.a, 1);
   eq('middle', mid.b, 0.5);
   eq('bottom', mid.c, 0);
 
-  const sat = B.placeScores(B.teamsFromMoney(C({ a:500, b:-500, c:0 })));
-  ok('sitting out is not a result at all', !sat.some(p => p.key === 'c'));
+  const lvl = B.placeScores(B.teamsFromMoney(C({ a:500, b:-500, c:0 })));
+  ok('coming out level is a result, and it places in the middle',
+     lvl.find(p => p.key === 'c')?.score === 0.5);
+
+  /* Nothing typed in is still nothing typed in. */
+  const untouched = B.teamsFromMoney(C({ a:0, b:0, c:0 }));
+  eq('a game of all noughts is not three people coming out level',
+     untouched.teams.length, 0);
 }
 
 section('Writing the night up');
@@ -888,6 +901,34 @@ async function browserTests(){
      /\+\$12/.test(await page.locator('.moneystrip').innerText()),
      await page.locator('.moneystrip').innerText());
   ok('a game that does not balance says so', /not zero/i.test(await g2.innerText()));
+
+  /* Nought and empty are two different things now: one of them is a person
+     who bowled and came out level, the other is a person who was not in it. */
+  const g3n = await page.locator('#panel .gamecard').count();
+  await page.locator('button.btn.wide', { hasText:'Another game' }).click();
+  const g3 = page.locator('#panel .gamecard').nth(g3n);
+  const boxes = g3.locator('.led input');
+  await boxes.nth(0).fill('5');  await boxes.nth(0).blur();
+  await boxes.nth(1).fill('-5'); await boxes.nth(1).blur();
+  await boxes.nth(2).fill('0');  await boxes.nth(2).blur();
+  await page.waitForTimeout(250);
+  const g3txt = await g3.innerText();
+  ok('a typed nought reads as coming out level, not sitting out',
+     /level/i.test(g3txt) && !/sat out/i.test(g3txt), g3txt.slice(0, 300));
+  ok('and it is written down as a row, not thrown away', await page.evaluate(() => {
+    const sid = localStorage.getItem('bowl.money.night');
+    return window.APP.state.money.some(m => m.session_id === sid && m.amount_cents === 0);
+  }));
+  ok('the person whose box is empty is not in that game at all',
+     /not in it/i.test(g3txt), g3txt.slice(0, 300));
+  const beforeClear = await page.evaluate(() => window.APP.state.money.length);
+  await boxes.nth(2).fill(''); await boxes.nth(2).blur();
+  await page.waitForTimeout(250);
+  ok('clearing the box takes their row away again',
+     await page.evaluate(() => window.APP.state.money.length) === beforeClear - 1);
+  /* put the night back how it was for the tests below */
+  await g3.locator('button.rm').click();
+  await page.waitForTimeout(250);
 
   await page.locator('#panel input[placeholder="someone else’s name"]').fill('Ash');
   await page.locator('button.btn.sm', { hasText:'Add somebody' }).click();
@@ -1488,8 +1529,13 @@ async function browserTests(){
      document.querySelector('meta[name=theme-color]')?.content === '#0b0b0f'));
 
   section('Signed out, nothing is walled off');
+  /* A guest with money on him, so the front door has somebody to claim. */
+  const guestFx = JSON.parse(JSON.stringify(fixture));
+  guestFx.guests = [{ id:'g-mike', name:'Mike', created_by:'me', created_at:'2025-03-08T23:00:00Z' }];
+  guestFx.money.push({ id:'m5', session_id:'ses1', game_no:2, guest_id:'g-mike', profile_id:null,
+                       amount_cents:-4000, created_by:'me', created_at:'2025-03-08T23:05:00Z' });
   const anon = await ctx.newPage();
-  await anon.addInitScript(fx => { window.__FIXTURE = fx; }, fixture);
+  await anon.addInitScript(fx => { window.__FIXTURE = fx; }, guestFx);
   await anon.goto(base + '?stub=1');
   await anon.waitForSelector('body[data-ready="1"]');
   const anonHome = await anon.locator('#panel').innerText();
@@ -1499,10 +1545,156 @@ async function browserTests(){
     return /trophy case/i.test(await anon.locator('#panel').innerText());
   })());
   await goTo(anon, 'log');
-  ok('only logging asks you to sign in',
-     /sign in/i.test(await anon.locator('#panel').innerText()));
+  ok('only logging asks who you are',
+     /who is bowling/i.test(await anon.locator('#panel').innerText()));
   ok('signed out, no floating log button', await anon.locator('.sticky-cta').count() === 0);
   await anon.close();
+
+  section('The front door: you pick who you are');
+  const door = await ctx.newPage();
+  await door.addInitScript(fx => { window.__FIXTURE = fx; }, guestFx);
+  await door.goto(base + '?stub=1');
+  await door.waitForSelector('body[data-ready="1"]');
+  const doorTxt = await door.locator('#panel').innerText();
+  ok('the chooser is the first thing on the home page', /who is bowling/i.test(doorTxt));
+  ok('but the book is still readable underneath it', /average/i.test(doorTxt));
+  ok('everybody the book knows is on it', /Drew/.test(doorTxt) && /Mike/.test(doorTxt));
+  ok('a guest is marked as one', /guest/i.test(doorTxt));
+  ok('an account this device has never met wants a password',
+     /needs a password/i.test(doorTxt));
+  ok('no face claims to be tappable before the device has met it',
+     !/tap to sign in/i.test(doorTxt));
+
+  /* An account is not claimable by tapping its name. */
+  await door.locator('.person.tap', { hasText:'Drew' }).first().click();
+  await door.waitForTimeout(200);
+  ok('tapping an account asks for the password, it does not let you in',
+     /signing in as drew/i.test(await door.locator('.sheet').innerText())
+     && await door.evaluate(() => !window.APP.state.user));
+  await door.locator('.closebtn').click();
+  await door.waitForTimeout(150);
+
+  /* A guest is claimable, but not by accident. */
+  await door.locator('.person.tap', { hasText:'Mike' }).first().click();
+  await door.waitForTimeout(200);
+  const claimSheet = await door.locator('.sheet').innerText();
+  ok('tapping a guest asks before it moves anything', /is this you/i.test(claimSheet));
+  ok('and it says what you are taking on', /40/.test(claimSheet) && /night/i.test(claimSheet));
+  ok('tapping a guest has not signed anybody in yet',
+     await door.evaluate(() => !window.APP.state.user));
+
+  await door.locator('.sheet button', { hasText:/Yes, I/ }).first().click();
+  await door.waitForTimeout(400);
+  ok('confirming signs you in without an account',
+     await door.evaluate(() => !!window.APP.state.user));
+  ok('and the guest stops being one',
+     await door.evaluate(() => !window.APP.state.guests.some(g => g.name === 'Mike')));
+  ok('and his money came with him', await door.evaluate(() => {
+    const me = window.APP.state.user.id;
+    return window.APP.state.money.some(m => m.profile_id === me && m.amount_cents === -4000)
+        && !window.APP.state.money.some(m => m.guest_id === 'g-mike');
+  }));
+  ok('and he is called Mike', await door.evaluate(() =>
+     window.APP.state.profiles.find(p => p.id === window.APP.state.user.id)?.display_name === 'Mike'));
+
+  await goTo(door, 'me');
+  const meTxt = await door.locator('#panel').innerText();
+  ok('an account with no email is told how to keep it', /add an email/i.test(meTxt));
+  ok('and warned that signing out is the end of it', /lose this account/i.test(meTxt));
+  await door.close();
+
+  section('A device that has met you already');
+  const known = await ctx.newPage();
+  /* What the ring looks like after Drew has signed in here once. */
+  await known.addInitScript(fx => {
+    window.__FIXTURE = fx;
+    localStorage.setItem('bowl.device', JSON.stringify({
+      me: { access_token:'a', refresh_token:'r', name:'Drew',
+            email:'drew@example.com', at: Date.now() } }));
+  }, guestFx);
+  await known.goto(base + '?stub=1');
+  await known.waitForSelector('body[data-ready="1"]');
+  const knownTxt = await known.locator('#panel').innerText();
+  ok('a face this device knows offers to just let you in', /tap to sign in/i.test(knownTxt));
+  ok('and the ones it does not still want a password', /needs a password/i.test(knownTxt));
+  await known.locator('.person.tap', { hasText:'Drew' }).first().click();
+  await known.waitForTimeout(400);
+  ok('tapping it signs you in with no password at all',
+     await known.evaluate(() => window.APP.state.user?.id === 'me'));
+  ok('and no sheet ever asked for one',
+     await known.locator('.sheet').count() === 0);
+
+  await goTo(known, 'me');
+  ok('an account with an email is offered a password change, not a rescue',
+     /change password/i.test(await known.locator('#panel').innerText()));
+  ok('and signing out offers to forget the device',
+     /forget me here/i.test(await known.locator('#panel').innerText()));
+  await known.locator('button', { hasText:'Sign out and forget me here' }).first().click();
+  await known.waitForTimeout(400);
+  ok('signing out drops that face from the ring', await known.evaluate(() =>
+     !JSON.parse(localStorage.getItem('bowl.device') || '{}').me));
+  ok('so the door asks for a password again',
+     /needs a password/i.test(await known.locator('#panel').innerText())
+     && !/tap to sign in/i.test(await known.locator('#panel').innerText()));
+  await known.close();
+
+  section('There is a way to your own page, and a way out');
+  const out = await ctx.newPage();
+  await out.addInitScript(fx => {
+    window.__FIXTURE = fx;
+    localStorage.setItem('bowl.device', JSON.stringify({
+      me: { access_token:'a', refresh_token:'r', name:'Drew',
+            email:'drew@example.com', at: Date.now() } }));
+  }, guestFx);
+  await out.goto(base + '?stub=1');
+  await out.waitForSelector('body[data-ready="1"]');
+  await out.locator('.person.tap', { hasText:'Drew' }).first().click();
+  await out.waitForTimeout(400);
+
+  /* The Me tab used to be reachable only by typing #me into the address bar,
+     which meant sign out was not reachable at all. */
+  await goTo(out, 'people');
+  const peopleTxt = await out.locator('#panel').innerText();
+  ok('the People tab opens with you', /^\s*you\b/im.test(peopleTxt) && /Drew/.test(peopleTxt));
+  ok('and says the way out is through it', /sign out/i.test(peopleTxt));
+  await out.locator('.card.tap', { hasText:'You' }).first().click();
+  await out.waitForTimeout(300);
+  ok('tapping it lands on your own page',
+     await out.evaluate(() => location.hash === '#me'));
+  const meTxt2 = await out.locator('#panel').innerText();
+  ok('which has a sign out button on it', /sign out/i.test(meTxt2));
+  ok('and a way back to People', await out.locator('.btn.back').count() > 0);
+  await out.locator('.btn.back').first().click();
+  await out.waitForTimeout(250);
+  ok('which goes back', await out.evaluate(() => location.hash === '#people'));
+
+  await goTo(out, 'me');
+  await out.locator('button', { hasText:/^Sign out/ }).first().click();
+  await out.waitForTimeout(400);
+  ok('and signing out from there works',
+     await out.evaluate(() => !window.APP.state.user));
+  await goTo(out, 'people');
+  ok('after which People says you are not signed in',
+     /not signed in/i.test(await out.locator('#panel').innerText()));
+  await out.close();
+
+  section('A newcomer needs nothing but a name');
+  const fresh = await ctx.newPage();
+  await fresh.addInitScript(fx => { window.__FIXTURE = fx; }, guestFx);
+  await fresh.goto(base + '?stub=1');
+  await fresh.waitForSelector('body[data-ready="1"]');
+  await fresh.locator('button', { hasText:'I am not on this list' }).first().click();
+  await fresh.waitForTimeout(150);
+  await fresh.locator('#panel input[type=text]').first().fill('Wanda');
+  await fresh.locator('button', { hasText:'Start bowling' }).first().click();
+  await fresh.waitForTimeout(400);
+  ok('a name and a tap is the whole of it',
+     await fresh.evaluate(() => !!window.APP.state.user));
+  ok('and the name is the one they typed', await fresh.evaluate(() =>
+     window.APP.state.profiles.find(p => p.id === window.APP.state.user.id)?.display_name === 'Wanda'));
+  ok('nobody else was disturbed by it', await fresh.evaluate(() =>
+     window.APP.state.guests.some(g => g.name === 'Mike')));
+  await fresh.close();
 
   section('Console');
   ok('no page errors and no console errors', noise.length === 0, noise.slice(0, 4).join(' / '));

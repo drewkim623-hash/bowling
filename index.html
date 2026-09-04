@@ -1051,17 +1051,27 @@ function moneyPower(r){
    game out or came away level, and either way it does not touch your record.
 
    `cells` is one entry per person: { key, cents }. */
+/* A cell is somebody who was in this game. Zero is a result — you played and
+   came out level, which is what the middle side of a three-way night gets —
+   not a way of saying you were not there. Sitting a game out is the absence of
+   a row, and `sat` is worked out from the night's roster by the caller. */
 function teamsFromMoney(cells){
+  /* A game where every number is nought has not been typed in yet — money has
+     to move for there to have been a game. Only once something has moved does
+     a nought mean somebody came out level. */
+  const settled = cells.some(c => c.cents);
   const by = new Map();
   for (const c of cells){
-    if (!c.cents) continue;
+    if (c.cents == null) continue;
+    if (!c.cents && !settled) continue;
     if (!by.has(c.cents)) by.set(c.cents, []);
     by.get(c.cents).push(c.key);
   }
   /* biggest win first, biggest loss last, so A is always the side that took it */
   const teams = [...by.entries()].sort((a, b) => b[0] - a[0])
     .map(([cents, players], i) => ({
-      letter: 'ABCD'[i] || '·', cents, players, won: cents > 0,
+      letter: 'ABCD'[i] || '·', cents, players,
+      won: cents > 0, lost: cents < 0, even: cents === 0,
       /* Who beat whom is certain — the sign says it. Who was PARTNERED with
          whom is not. Four people on the same number might be a four-man team,
          or two pairs who both happened to win the same amount, and the ledger
@@ -1075,14 +1085,18 @@ function teamsFromMoney(cells){
   return {
     teams,
     winners: flat(t => t.won),
-    losers:  flat(t => !t.won),
-    sat: cells.filter(c => !c.cents).map(c => c.key),
+    /* Level is not lost. Before this, everybody who broke even was billed as
+       having been beaten. */
+    losers:  flat(t => t.lost),
+    evens:   flat(t => t.even),
+    sat: [],
     /* A game only tells you something if somebody was up and somebody down.
        When it does not add to nothing, say so rather than quietly inventing
        a result — somebody has mistyped, and they can see where. */
     balanced: balance === 0 && teams.length > 1,
     balance,
-    headToHead: teams.length === 2,
+    /* Two sides means two sides. A level third side is still a third side. */
+    headToHead: teams.length === 2 && !teams.some(t => t.even),
   };
 }
 
@@ -1399,6 +1413,54 @@ function demoFixture(){
   return { profiles, sessions, players, games, rolls, edits };
 }
 
+/* ======================================================================
+   WHO THIS DEVICE KNOWS
+
+   supabase-js keeps exactly one session, so signing in as Drew forgets
+   Marcus. That is wrong for a phone that gets passed down the lane. So we
+   keep our own small ring of tokens — one per person who has signed in here
+   — and tapping a face puts that session back.
+
+   This is a real trade: anybody holding this unlocked phone can become any
+   of these people without a password. That is the point on a group's phone
+   and a liability on a shared one, which is why "Forget me on this device"
+   sits next to every face and inside sign-out.
+   ====================================================================== */
+const DEVICE_KEY = 'bowl.device';
+function deviceRoster(){
+  try { return JSON.parse(localStorage.getItem(DEVICE_KEY) || '{}') || {}; }
+  catch { return {}; }
+}
+function rememberOnDevice(id, session, name){
+  if (!id || !session?.refresh_token) return;
+  try {
+    const all = deviceRoster();
+    all[id] = { access_token: session.access_token, refresh_token: session.refresh_token,
+                name: name || all[id]?.name || null,
+                /* Kept so a restored face knows whether it is a real account
+                   or somebody who never made one — the Me tab offers them
+                   very different things. */
+                email: session.user?.email || all[id]?.email || null,
+                at: Date.now() };
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(all));
+  } catch {}
+}
+function forgetOnDevice(id){
+  try { const all = deviceRoster(); delete all[id]; localStorage.setItem(DEVICE_KEY, JSON.stringify(all)); }
+  catch {}
+}
+const deviceKnows = id => !!deviceRoster()[id];
+
+/* Anonymous sign-ins ship switched off, and the error Supabase returns for it
+   is not something to put in front of a person holding a bowling ball. */
+function anonError(err){
+  const m = String(err?.message || err);
+  if (/anonymous.*(disabled|not enabled)|signups not allowed/i.test(m))
+    return new Error('Signing in without an account is switched off for this site. '
+      + 'Turn on Anonymous sign-ins in the Supabase dashboard, under Authentication → Sign In / Providers.');
+  return err;
+}
+
 /* ---- the stub: in-memory, used by tests (?stub=1) and demo (?demo=1) ---- */
 function stubDB(){
   const seed = window.__FIXTURE || (DEMO ? demoFixture() : { profiles:[], sessions:[], players:[], games:[], rolls:[], edits:[], money:[], guests:[] });
@@ -1411,8 +1473,44 @@ function stubDB(){
     onChange(){},
     async loadAll(){ return JSON.parse(JSON.stringify(D)); },
     async signUp({ email, name }){ user = { id:'me', email }; D.profiles.push({ id:'me', display_name:name || 'You', handle:null, joined_at:new Date().toISOString() }); return {}; },
-    async signIn({ email }){ user = { id:'me', email }; return {}; },
+    async signIn({ email }){
+      user = { id:'me', email };
+      rememberOnDevice('me', { access_token:'stub', refresh_token:'stub', user }, null);
+      return {};
+    },
     async magic(){ return {}; },
+    async anon({ name }){
+      const id = 'anon-' + uid().slice(0, 8);
+      user = { id, is_anonymous: true };
+      D.profiles.push({ id, display_name: name || 'Bowler', handle:null,
+                        joined_at:new Date().toISOString() });
+      rememberOnDevice(id, { access_token:'stub', refresh_token:'stub' }, name);
+      return {};
+    },
+    /* Mirrors claim_guest in schema.sql: the money moves, the guest goes. */
+    async claimGuest(id){
+      const g = D.guests.find(x => x.id === id);
+      if (!g) throw new Error('that guest is already gone');
+      const taken = new Set(D.money.filter(m => m.profile_id === user.id && m.game_no != null)
+                                   .map(m => m.session_id + '|' + m.game_no));
+      D.money = D.money.filter(m => !(m.guest_id === id && m.game_no != null
+                                      && taken.has(m.session_id + '|' + m.game_no)));
+      for (const m of D.money) if (m.guest_id === id){ m.profile_id = user.id; m.guest_id = null; }
+      const p = D.profiles.find(x => x.id === user.id);
+      if (p && (!p.display_name || p.display_name === 'Bowler')) p.display_name = g.name;
+      D.guests = D.guests.filter(x => x.id !== id);
+      return {};
+    },
+    async resume(id){
+      const keep = deviceRoster()[id];
+      if (!keep) throw new Error('This device does not know that account.');
+      user = { id, email: keep.email || undefined };
+      return {};
+    },
+    async addEmail({ email }){
+      user = { ...user, email, is_anonymous:false };
+      return {};
+    },
     async signOut(){ user = null; },
     async saveProfile(patch){ const p = D.profiles.find(x => x.id === user.id); Object.assign(p, patch); },
     async renameProfile(id, name){
@@ -1506,8 +1604,21 @@ async function liveDB(){
   };
   return {
     kind:'live', sb,
-    async init(){ const { data } = await sb.auth.getSession(); return data?.session?.user || null; },
-    onChange(fn){ sb.auth.onAuthStateChange((_e, sess) => fn(sess?.user || null)); },
+    async init(){
+      const { data } = await sb.auth.getSession();
+      if (data?.session) rememberOnDevice(data.session.user.id, data.session);
+      return data?.session?.user || null;
+    },
+    /* Supabase rotates refresh tokens, so the copy we stashed for whoever is
+       signed in right now goes stale under us. Re-stash on every refresh.
+       Nobody is rotating the tokens of the people who are only sitting in the
+       ring, so theirs stay good. */
+    onChange(fn){
+      sb.auth.onAuthStateChange((_e, sess) => {
+        if (sess) rememberOnDevice(sess.user.id, sess);
+        fn(sess?.user || null);
+      });
+    },
     /* Cheapest possible probe: if this column is missing, the database is
        running an older schema.sql than the page expects. */
     async schemaReady(){
@@ -1538,7 +1649,47 @@ async function liveDB(){
       const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.href.split('?')[0] } });
       if (error) throw error; return {};
     },
-    async signOut(){ await sb.auth.signOut(); },
+    /* No account at all: Supabase mints an anonymous user, handle_new_user in
+       schema.sql turns it into a profile row, and from here on this person is
+       indistinguishable from anybody else to every policy in the database. */
+    async anon({ name }){
+      const { data, error } = await sb.auth.signInAnonymously({ options:{ data:{ display_name:name } } });
+      if (error) throw anonError(error);
+      if (data?.session) rememberOnDevice(data.session.user.id, data.session, name);
+      return {};
+    },
+    async claimGuest(id){
+      const { error } = await sb.rpc('claim_guest', { g: id });
+      if (error){
+        if (/claim_guest|function.*does not exist|schema cache/i.test(error.message || '')){
+          state.staleSchema = true;
+          throw new Error('This database has not been taught how to do that yet. '
+            + 'Run the latest schema.sql — the home page has the SQL to paste.');
+        }
+        throw error;
+      }
+      return {};
+    },
+    /* Put a face's session back. If the token has been revoked or has aged
+       out, say so plainly so the caller can fall back to asking for a
+       password rather than leaving somebody staring at a dead button. */
+    async resume(id){
+      const keep = deviceRoster()[id];
+      if (!keep) throw new Error('This device does not know that account.');
+      const { data, error } = await sb.auth.setSession({
+        access_token: keep.access_token, refresh_token: keep.refresh_token });
+      if (error || !data?.session){ forgetOnDevice(id); throw new Error('STALE'); }
+      rememberOnDevice(data.session.user.id, data.session);
+      return {};
+    },
+    /* Local scope on purpose. The default revokes every refresh token this
+       user has anywhere, which would sign them out on their own phone and
+       empty this device's ring on the way past. */
+    async signOut(){ await sb.auth.signOut({ scope:'local' }); },
+    async addEmail({ email, password }){
+      const { error } = await sb.auth.updateUser({ email, password });
+      if (error) throw error; return {};
+    },
     async saveProfile(patch){
       const { error } = await sb.from('profiles').upsert({ id: state.user.id, ...patch });
       if (error) throw error;
@@ -1788,11 +1939,22 @@ function derive(){
      the money is the one thing that always gets typed. */
   D.moneyRounds = [];
   D.roundsOfNight = new Map();
+  /* Who the night knows about at all — used to work out who was missing from
+     a given game, now that a zero means level rather than absent. */
+  const rosterOfNight = new Map();
+  for (const m of state.money){
+    if (!rosterOfNight.has(m.session_id)) rosterOfNight.set(m.session_id, new Set());
+    rosterOfNight.get(m.session_id).add(personKey(m));
+  }
   for (const [k, rows] of D.moneyByGame){
     const cut = k.lastIndexOf('|');
     const session_id = k.slice(0, cut), game_no = Number(k.slice(cut + 1));
     const out = B.teamsFromMoney(rows.map(m => ({ key: personKey(m), cents: m.amount_cents })));
     if (!out.teams.length) continue;                       // nothing typed in yet
+    /* Sitting out is having no row in this game while the night has one for
+       you somewhere else. A row of zero means you bowled and came out level. */
+    const here = new Set(rows.map(personKey));
+    out.sat = [...(rosterOfNight.get(session_id) || [])].filter(p => !here.has(p));
     const r = { session_id, game_no, ...out };
     D.moneyRounds.push(r);
     if (!D.roundsOfNight.has(session_id)) D.roundsOfNight.set(session_id, []);
@@ -1805,7 +1967,7 @@ function derive(){
   D.recordOf = new Map();
   const reachFor = key => {
     if (!D.recordOf.has(key))
-      D.recordOf.set(key, { key, won:0, lost:0, points:0, scored:0,
+      D.recordOf.set(key, { key, won:0, lost:0, even:0, points:0, scored:0,
                             nights:new Set(), mates:new Map() });
     return D.recordOf.get(key);
   };
@@ -1815,7 +1977,9 @@ function derive(){
       for (const key of t.players){
         const p = reachFor(key);
         p.nights.add(r.session_id);
-        if (t.won) p.won++; else p.lost++;
+        /* Level is its own outcome. Counting it as a loss was how the middle
+           side of a three-way night got billed as beaten. */
+        if (t.won) p.won++; else if (t.lost) p.lost++; else p.even++;
         const sc = place.get(key);
         if (sc){ p.points += sc.score; p.scored++; }
         /* only where the money actually says who was with whom */
@@ -2991,6 +3155,38 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 create unique index if not exists money_one_per_game_guest
   on money (session_id, game_no, guest_id) where game_no is not null and guest_id is not null;
+create or replace function handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $BODY$
+begin
+  insert into profiles (id, display_name, is_admin)
+  values (new.id,
+          coalesce(nullif(trim(coalesce(new.raw_user_meta_data->>'display_name',
+                                        split_part(coalesce(new.email, ''), '@', 1))), ''),
+                   'Bowler'),
+          not exists (select 1 from profiles where is_admin))
+  on conflict (id) do nothing;
+  return new;
+end $BODY$;
+create or replace function claim_guest(g uuid) returns void
+language plpgsql security definer set search_path = public as $BODY$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'nobody is signed in'; end if;
+  if not exists (select 1 from guests where id = g) then
+    raise exception 'that guest is already gone';
+  end if;
+  delete from money m
+   where m.guest_id = g and m.game_no is not null
+     and exists (select 1 from money k
+                  where k.profile_id = me and k.session_id = m.session_id
+                    and k.game_no = m.game_no);
+  update money set profile_id = me, guest_id = null where guest_id = g;
+  update profiles p set display_name = (select name from guests where id = g)
+   where p.id = me and (p.display_name is null or p.display_name = 'Bowler');
+  delete from guests where id = g;
+end $BODY$;
+revoke all on function claim_guest(uuid) from public;
+grant execute on function claim_guest(uuid) to authenticated;
 alter table rolls add column if not exists pins  smallint;
 alter table rolls add column if not exists split boolean not null default false;
 alter table rolls alter column standing_before drop not null;
@@ -3016,8 +3212,8 @@ function tabLog(){
   const box = h('div', {});
   if (state.staleSchema) box.append(staleSchemaCard());
   if (!state.user){
-    box.append(sectionHead('Log a session', 'You need to be signed in to add scores. Reading is open to everyone.'));
-    box.append(authCard());
+    box.append(sectionHead('Log a session', 'Say who you are and you can add scores. Reading is open to everyone.'));
+    box.append(whoAreYouCard());
     return box;
   }
   if (!state.me || !state.me.display_name){ box.append(profileSetup()); return box; }
@@ -3070,13 +3266,151 @@ const isBoss = () => !!(state.me && state.me.is_admin);
 const canEdit = g => !!(state.user && (state.user.id === g.profile_id || state.user.id === g.logged_by || isBoss()));
 const bossChip = () => h('span.chip.boss', {}, 'commissioner');
 
-function authCard(){
+/* ======================================================================
+   WHO ARE YOU
+
+   The front door. Everybody the book already knows, laid out to be tapped.
+   Three kinds of face, and the difference is entirely about what it would
+   cost to be wrong about who somebody is:
+
+     a guest      — a name and nothing else. Nothing to steal, so tapping it
+                    signs you in and pulls their money onto you. Confirmed
+                    first, because it moves real money onto a real person.
+     an account
+     this device
+     has met      — the session is in the ring. Tap and you are in.
+     any other
+     account      — has a password. Asking for it is the whole point; a face
+                    is not a credential.
+   ====================================================================== */
+function whoAreYouCard(){
+  const box = card();
+  const msg = h('div.err', {});
+
+  const guests = state.guests.slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const accounts = state.profiles.slice()
+    .sort((a, b) => (deviceKnows(b.id) - deviceKnows(a.id))
+                 || String(a.display_name || '').localeCompare(String(b.display_name || '')));
+
+  const face = (label, sub, kid, run) =>
+    h('button.person.tap', { onclick: run },
+      h('div.row', {}, kid,
+        h('div', { style:{ minWidth:0 } },
+          h('div', { style:{ fontWeight:650, fontSize:'13px' } }, label),
+          h('div.tiny.muted', {}, sub))));
+
+  const people = h('div.people', {});
+  for (const p of accounts)
+    people.append(face(p.display_name || 'Bowler',
+      deviceKnows(p.id) ? 'tap to sign in' : 'needs a password', avatar(p),
+      () => deviceKnows(p.id) ? resumeFace(p) : passwordFor(p)));
+  for (const g of guests)
+    people.append(face(g.name, 'guest', nameChip(g.name), () => claimFace(g)));
+
+  /* Somebody who has signed in here before is the likeliest person holding
+     the phone, so their face leads. A brand new database has no faces at
+     all, and then this is just a name and a button. */
+  async function resumeFace(p){
+    msg.textContent = '';
+    try { await db.resume(p.id); await boot(true); toast('Hello again, ' + (p.display_name || '') + '.'); }
+    catch (err){
+      if (String(err.message) === 'STALE'){ passwordFor(p, 'This device was signed out. Password once more.'); return; }
+      msg.className = 'err'; msg.textContent = err.message || String(err);
+    }
+  }
+
+  function passwordFor(p, note){
+    /* profiles has no email column and auth.users is not readable, so there
+       is no address to pre-fill here. Asking for it is the honest cost of
+       not publishing everybody's email to anyone who opens the site. */
+    const email = h('input', { type:'email', placeholder:'you@example.com', autocomplete:'email' });
+    const pass  = h('input', { type:'password', placeholder:'your password', autocomplete:'current-password' });
+    const err2  = h('div.err', {}, note || '');
+    openSheet('Signing in as ' + (p.display_name || 'this account'), body => {
+      body.append(
+        h('label.f', {}, h('span', {}, 'Email'), email),
+        h('label.f', {}, h('span', {}, 'Password'), pass), err2,
+        h('button.btn.pri.wide.big', { style:{ marginTop:'12px' }, async onclick(){
+          err2.className = 'err'; err2.textContent = '';
+          try { await db.signIn({ email: email.value.trim(), password: pass.value });
+                closeSheet(); await boot(true); }
+          catch (e2){ err2.textContent = e2.message || String(e2); }
+        } }, 'Sign in'),
+        h('button.btn.wide', { style:{ marginTop:'8px' }, async onclick(){
+          err2.className = 'err'; err2.textContent = '';
+          try {
+            if (!email.value.trim()) throw new Error('Type your email address first.');
+            await db.magic({ email: email.value.trim() });
+            err2.className = 'ok'; err2.textContent = 'Sent. Open the link in your email and you are in.';
+          } catch (e2){ err2.textContent = e2.message || String(e2); }
+        } }, 'Email me a link instead'));
+    }, 'This account has a password. A name on a list is not a way in.');
+  }
+
+  function claimFace(g){
+    const berr = h('div.err', {});
+    const owed = moneySummaryKey(keyOfGuest(g.id));
+    const bits = [];
+    if (owed.nights) bits.push(`${money(owed.net)} across ${owed.nights} ${owed.nights === 1 ? 'night' : 'nights'}`);
+    openSheet('Is this you?', body => {
+      body.append(
+        h('p.small.ink2', {}, bits.length
+          ? `Everything the book has under ${g.name} — ${bits.join(', ')} — becomes yours, and “${g.name}” stops being a guest.`
+          : `You will become ${g.name}, and “${g.name}” stops being a guest.`),
+        berr,
+        h('button.btn.pri.wide.big', { style:{ marginTop:'12px' }, async onclick(){
+          berr.className = 'err'; berr.textContent = '';
+          try {
+            await db.anon({ name: g.name });
+            await db.claimGuest(g.id);
+            closeSheet(); await boot(true); toast(`You are ${g.name}.`);
+          } catch (err){ berr.className = 'err'; berr.textContent = err.message || String(err); }
+        } }, `Yes, I'm ${g.name}`),
+        h('button.btn.wide', { style:{ marginTop:'8px' }, onclick: closeSheet }, 'No, that is somebody else'));
+    }, 'Tapping a guest takes over their history. Worth being sure.');
+  }
+
+  /* Nobody on the list. A name, and in you go. */
+  const fresh = h('input', { type:'text', placeholder:'the name everyone calls you' });
+  const newcomer = h('div', { style:{ display:'none' } },
+    h('label.f', { style:{ marginTop:'10px' } }, h('span', {}, 'Your name'), fresh),
+    h('button.btn.pri.wide', { style:{ marginTop:'8px' }, async onclick(){
+      msg.textContent = '';
+      const n = fresh.value.trim();
+      if (!n){ msg.className = 'err'; msg.textContent = 'Tell us your name first.'; return; }
+      try { await db.anon({ name: n }); await boot(true); toast('You are in.'); }
+      catch (err){ msg.className = 'err'; msg.textContent = err.message || String(err); }
+    } }, 'Start bowling'));
+
+  const oldAccount = h('div', { style:{ display:'none' } }, authCard(true));
+
+  box.append(
+    h('div.spread', {},
+      h('div', {}, h('h2', {}, 'Who is bowling?'),
+        h('p.sub.small.muted', {}, 'Tap yourself. No account needed \u2014 and you can read everything below without one.'))),
+    people.children.length ? people : h('p.small.muted', {}, 'Nobody in the book yet. Put your name in and you are the first.'),
+    msg,
+    h('button.btn.wide', { style:{ marginTop:'10px' }, onclick(){
+      newcomer.style.display = newcomer.style.display === 'none' ? 'block' : 'none';
+      if (newcomer.style.display === 'block') fresh.focus();
+    } }, 'I am not on this list'),
+    newcomer,
+    h('button.btn.wide', { style:{ marginTop:'8px' }, onclick(){
+      oldAccount.style.display = oldAccount.style.display === 'none' ? 'block' : 'none';
+    } }, 'I already have an account'),
+    oldAccount);
+  return box;
+}
+
+function authCard(bare){
   const email = h('input', { type:'email', placeholder:'you@example.com', autocomplete:'email' });
   const pass  = h('input', { type:'password', placeholder:'at least 6 characters', autocomplete:'current-password' });
   const name  = h('input', { type:'text', placeholder:'the name everyone calls you' });
   const msg   = h('div.err', {});
   let mode = 'in';
-  const box = card();
+  /* Bare when it is folded inside the chooser, which is already a card. */
+  const box = bare ? h('div', {}) : card();
   function draw(){
     clear(box);
     box.append(
@@ -3111,8 +3445,10 @@ function authCard(){
           msg.className = 'ok'; msg.textContent = 'Sent. Open the link in your email and you are in — no password needed.';
         } catch (err){ msg.className = 'err'; msg.textContent = err.message || String(err); }
       } }, 'Email me a sign-in link instead'),
-      h('p.tiny.muted', { style:{ marginTop:'10px' } },
-        'Everything on this site is readable without an account. Signing in is only for adding scores.'));
+      /* Spread again, same reason as the display name above: a bare null
+         handed to box.append lands on the page as the word "null". */
+      ...(bare ? [] : [h('p.tiny.muted', { style:{ marginTop:'10px' } },
+        'Everything on this site is readable without an account. Signing in is only for adding scores.')]));
   }
   draw();
   return box;
@@ -3275,6 +3611,7 @@ function tabHome(){
       h('p.small.ink2', { style:{ marginTop:'4px' } },
         'Open index.html, find the SUPA block near the top of the script, and paste in your Supabase URL and anon key. Step 3 of the README.')));
   if (state.staleSchema) box.append(staleSchemaCard());
+  if (!state.user) box.append(whoAreYouCard());
   if (state.user && !profileComplete(state.me)) box.append(profileSetup());
 
   /* ---- what the book actually knows -----------------------------------
@@ -3829,13 +4166,13 @@ function moneyRecord(key){
   const net = D.moneyByPerson.get(key) || 0;
   const base = { key, name: personName(key), guest: personIsGuest(key),
                  profile: personIsGuest(key) ? null : D.profile.get(key.slice(2)), net };
-  if (!r) return { ...base, won:0, lost:0, played:0, winPct:null, rating:null, nights:0, mates:[] };
-  const played = r.won + r.lost;
+  if (!r) return { ...base, won:0, lost:0, even:0, played:0, winPct:null, rating:null, nights:0, mates:[] };
+  const played = r.won + r.lost + r.even;
   const mates = [...r.mates.entries()]
     .map(([k, m]) => ({ key:k, name: personName(k), n:m.n, won:m.won,
                         winPct: m.n ? (m.won / m.n) * 100 : null }))
     .sort((a,b) => b.n - a.n);
-  return { ...base, won:r.won, lost:r.lost, played,
+  return { ...base, won:r.won, lost:r.lost, even:r.even, played,
            winPct: played ? (r.won / played) * 100 : null,
            /* where you finished, averaged. Identical to win % on a night of
               straight two-sided games, and pulls apart from it the moment
@@ -3915,7 +4252,7 @@ function everyPersonKey(){
     ...state.money.map(personKey),
   ])];
 }
-const wl = r => `${r.won}\u2013${r.lost}`;
+const wl = r => `${r.won}\u2013${r.lost}` + (r.even ? `\u2013${r.even}` : '');
 
 function moneySummaryKey(key){
   const nights = moneyNightsForKey(key);
@@ -4059,6 +4396,8 @@ function sidesLine(out){
     el.append(h('b', {}, nameList(out.winners)), ' came away up \u00b7 ',
               h('b', {}, nameList(out.losers)), ' paid for it');
   }
+  if (out.evens.length)
+    el.append(' \u00b7 ', h('b', {}, nameList(out.evens)), ' came out level');
   if (out.sat.length) el.append(` \u00b7 ${nameList(out.sat)} sat out`);
   /* Be honest about the limit of the trick rather than quietly inventing
      line-ups: four people on one number might be a four, or two pairs. */
@@ -4106,7 +4445,12 @@ function moneyLedger(ses){
   for (const m of rows) draft.set(m.game_no + '|' + personKey(m), m.amount_cents);
   let games = Math.max(1, ...rows.map(m => m.game_no || 1),
                        Number(localStorage.getItem(gameCountKey(ses.id))) || 1);
-  const cell = (n, k) => draft.get(n + '|' + k) || 0;
+  /* Two different noughts. `raw` is null when there is no row at all — that
+     person was not in this game — and 0 when there is a row saying they came
+     out level. `cell` is for adding up, where both are worth nothing. */
+  const raw  = (n, k) => { const v = draft.get(n + '|' + k); return v == null ? null : v; };
+  const cell = (n, k) => raw(n, k) || 0;
+  const setCell = (n, k, v) => v == null ? draft.delete(n + '|' + k) : draft.set(n + '|' + k, v);
   const totalFor = k => { let t = 0; for (let n = 1; n <= games; n++) t += cell(n, k); return t; };
 
   /* What actually goes in the message. Plain lines, no attempt at columns —
@@ -4191,7 +4535,8 @@ function moneyLedger(ses){
   };
   async function save(n){
     pending.delete(n);
-    const payload = keys.map(k => ({ ...personRow(k), amount_cents: cell(n, k) }));
+    const payload = keys.filter(k => raw(n, k) != null)
+                        .map(k => ({ ...personRow(k), amount_cents: raw(n, k) }));
     try { await db.saveSettlement(ses.id, n, payload); await load(); }
     catch (err){ toast(saveError(err)); }
   }
@@ -4281,39 +4626,40 @@ function moneyLedger(ses){
 
       /* The sides are not typed in. They are read off the numbers as they are
          typed: same amount, same side; up means that side took the game. */
-      const out = B.teamsFromMoney(keys.map(k => ({ key:k, cents: cell(n, k) })));
+      const out = B.teamsFromMoney(keys.filter(k => raw(n, k) != null)
+                                       .map(k => ({ key:k, cents: raw(n, k) })));
       const sideOf = k => out.teams.find(t => t.players.includes(k)) || null;
 
       const led = h('div', { style:{ marginTop:'10px' } });
       for (const k of keys){
-        const v = cell(n, k);
+        const v = raw(n, k);
         const t = sideOf(k);
+        /* An empty box is not in this game. A nought is in it and level. */
+        const read = e => e.target.value.trim() === ''
+          ? null : Math.round(Number(e.target.value) * 100);
         const input = h('input.n', { type:'number', step:'0.5',
-          value: v ? (v / 100).toFixed(2).replace(/\.00$/, '') : '', placeholder:'0',
+          value: v == null ? '' : (v / 100).toFixed(2).replace(/\.00$/, ''),
+          placeholder:'\u2013',
           /* the running totals move as you type; the write-down follows a
              moment later so it is not one request per keystroke */
-          oninput(e){
-            draft.set(n + '|' + k, Math.round(Number(e.target.value || 0) * 100));
-            drawTotals(); saveSoon(n);
-          },
-          onchange(e){
-            draft.set(n + '|' + k, Math.round(Number(e.target.value || 0) * 100));
-            drawTotals(); save(n); drawCard();
-          } });
+          oninput(e){ setCell(n, k, read(e)); drawTotals(); saveSoon(n); },
+          onchange(e){ setCell(n, k, read(e)); drawTotals(); save(n); drawCard(); } });
         led.append(h('div.led', {},
           h('span.side', { 'data-t': t ? t.letter : '' }, t ? t.letter : '–'),
           h('div.who', {}, personName(k), personIsGuest(k) ? h('span.tiny.muted', {}, ' guest') : null),
-          h('span.tiny', { cls: t ? (t.won ? 'good' : 'bad') : 'muted' },
-            t ? (t.won ? 'won' : 'lost') : 'sat out'),
+          h('span.tiny', { cls: t ? (t.won ? 'good' : t.lost ? 'bad' : 'muted') : 'muted' },
+            t ? (t.won ? 'won' : t.lost ? 'lost' : 'level')
+              : (v == null ? 'not in it' : 'level')),
           h('div.amt', {}, input)));
         if (quickAmounts)
           led.append(h('div.quickamt', {}, QUICK.map(cents =>
             h('button' + (v === cents ? '.on' : '') + (cents === 0 ? '.zero' : ''), {
               'aria-label': `${personName(k)} ${cents === 0 ? 'level' : money(cents)}`,
               onclick(){
-                /* tapping the one already showing clears it, so a mis-tap is
-                   one tap to undo rather than a trip to the keyboard */
-                draft.set(n + '|' + k, v === cents ? 0 : cents);
+                /* tapping the one already showing takes them back out of the
+                   game, so a mis-tap is one tap to undo rather than a trip to
+                   the keyboard. The dash is its own thing: level. */
+                setCell(n, k, v === cents ? null : cents);
                 drawTotals(); save(n); drawCard();
               } },
               cents === 0 ? '\u2013' : (cents > 0 ? '+' : '\u2212') + Math.abs(cents / 100)))));
@@ -4336,7 +4682,10 @@ function moneyLedger(ses){
         W.forEach(k => amounts[k] = stake);
         L.forEach(k => amounts[k] = -stake);
       }
-      for (const k of keys) draft.set(n + '|' + k, amounts[k] || 0);
+      /* Nobody marked either way was not in this game, so they get no row
+         rather than a nought that would read as coming out level. */
+      for (const k of keys)
+        setCell(n, k, marks.get(k) ? (amounts[k] || 0) : null);
       drawTotals(); save(n); drawCard();
     }
     drawCard();
@@ -4817,8 +5166,8 @@ function tabTonight(){
   if (state.staleSchema) box.append(staleSchemaCard());
   if (MONEY.session){ box.append(moneyLedger(MONEY.session)); return box; }
   if (!state.user){
-    box.append(sectionHead('Tonight', 'Sign in to keep the book. Anyone can read it.'));
-    box.append(authCard());
+    box.append(sectionHead('Tonight', 'Say who you are to keep the book. Anyone can read it.'));
+    box.append(whoAreYouCard());
     return box;
   }
   const last = (() => { try { return localStorage.getItem('bowl.money.night'); } catch { return null; } })();
@@ -5218,6 +5567,7 @@ function moneyRecords(){
     for (const k of r.winners){ run.set(k, (run.get(k) || 0) + 1);
       if ((run.get(k)) > (best.get(k) || 0)) best.set(k, run.get(k)); }
     for (const k of r.losers) run.set(k, 0);
+    for (const k of r.evens) run.set(k, 0);      // level ends a run of wins too
   }
   const streak = [...best.entries()].sort((a, b) => b[1] - a[1])[0] || null;
   const ranked = everyPersonKey().map(moneyRecord).filter(r => r.played >= 8);
@@ -5424,12 +5774,14 @@ function tabTeams(){
 function tabMe(){
   const box = h('div', {});
   if (!state.user){
-    box.append(sectionHead('You', 'Sign in to log scores and manage your profile.'));
-    box.append(authCard());
+    box.append(sectionHead('You', 'Say who you are to log scores and keep a profile.'));
+    box.append(whoAreYouCard());
     return box;
   }
   const st = D.stats.get(state.user.id);
-  box.append(sectionHead('Your profile'));
+  /* Reached from the People tab, so it needs the same way out as anything
+     else you step into. */
+  box.append(flowHead('You', state.me?.display_name || null, () => go('people'), 'People'));
   if (isBoss()) box.append(h('div.card', {},
     h('div.row.wrapf', {}, bossChip(),
       h('span.small.ink2', {}, 'You can fix or delete anybody’s games and sessions.')),
@@ -5457,18 +5809,55 @@ function tabMe(){
   }
 
   box.append(sectionHead('Account'));
-  const pw = h('input', { type:'password', placeholder:'new password', autocomplete:'new-password' });
+  const anon = !state.user.email;
   const msg = h('div.err', {});
+
+  if (anon){
+    /* No email means this browser is the only way back to this person. Say so
+       where they can do something about it, not in a footnote. */
+    const em = h('input', { type:'email', placeholder:'you@example.com', autocomplete:'email' });
+    const pw = h('input', { type:'password', placeholder:'at least 6 characters', autocomplete:'new-password' });
+    box.append(card(
+      h('div.up', {}, 'Add an email so you do not lose this'),
+      h('p.small.ink2', { style:{ marginTop:'4px' } },
+        'You are signed in without an account, which lives in this browser and nowhere else. Clear it, or pick up a different phone, and you cannot get back to these games \u2014 they stay in the book under your name with nobody able to edit them. An email fixes that. Same profile, same history, nothing moves.'),
+      h('label.f', { style:{ marginTop:'10px' } }, h('span', {}, 'Email'), em),
+      h('label.f', {}, h('span', {}, 'Password'), pw), msg,
+      h('button.btn.pri.wide', { style:{ marginTop:'10px' }, async onclick(){
+        msg.className = 'err'; msg.textContent = '';
+        if (!em.value.trim()){ msg.textContent = 'Type an email address.'; return; }
+        if (pw.value.length < 6){ msg.textContent = 'Six characters or more.'; return; }
+        try {
+          await db.addEmail({ email: em.value.trim(), password: pw.value });
+          msg.className = 'ok';
+          msg.textContent = 'Saved. Check your email if it asks you to confirm it.';
+          pw.value = '';
+        } catch (err){ msg.textContent = err.message || String(err); }
+      } }, 'Keep this account')));
+  } else {
+    const pw = h('input', { type:'password', placeholder:'new password', autocomplete:'new-password' });
+    box.append(card(
+      h('label.f', {}, h('span', {}, 'Change password'), pw), msg,
+      h('button.btn.wide', { style:{ marginTop:'10px' }, async onclick(){
+        msg.className = 'err'; msg.textContent = '';
+        if (pw.value.length < 6){ msg.textContent = 'Six characters or more.'; return; }
+        try { await db.changePassword(pw.value); msg.className = 'ok'; msg.textContent = 'Changed.'; pw.value = ''; }
+        catch (err){ msg.textContent = err.message || String(err); }
+      } }, 'Save new password')));
+  }
+
+  /* Signing out of an account with no email is a one way door, so it does not
+     get to look like the same button as everybody else's. */
   box.append(card(
-    h('label.f', {}, h('span', {}, 'Change password'), pw), msg,
-    h('button.btn.wide', { style:{ marginTop:'10px' }, async onclick(){
-      msg.className = 'err'; msg.textContent = '';
-      if (pw.value.length < 6){ msg.textContent = 'Six characters or more.'; return; }
-      try { await db.changePassword(pw.value); msg.className = 'ok'; msg.textContent = 'Changed.'; pw.value = ''; }
-      catch (err){ msg.textContent = err.message || String(err); }
-    } }, 'Save new password'),
-    h('button.btn.wide.danger', { style:{ marginTop:'8px' }, async onclick(){
-      await db.signOut(); await boot(true); toast('Signed out'); } }, 'Sign out')));
+    h('div.up', {}, 'This device'),
+    h('p.small.ink2', { style:{ marginTop:'4px' } }, anon
+      ? 'Signing out of an account with no email is final \u2014 there is no password to get back in with. Add an email above first if you want to keep it.'
+      : 'This device remembers you so you can tap your face instead of typing a password. Forget it on a phone that is not yours.'),
+    h('button.btn.wide.danger', { style:{ marginTop:'10px' }, async onclick(){
+      if (anon && !confirm('There is no email on this account, so signing out means you cannot get back in. Your games stay in the book but nobody can edit them. Sign out anyway?')) return;
+      forgetOnDevice(state.user.id);
+      await db.signOut(); await boot(true); toast('Signed out');
+    } }, anon ? 'Sign out and lose this account' : 'Sign out and forget me here')));
 
   box.append(glossary([GLOSS.hcap, GLOSS.quick,
     ['Editing', 'You can change or delete any game you bowled or any game you logged for someone else. The original is kept and shown in the history — that is the deal.'],
@@ -5528,6 +5917,34 @@ function buildStamp(){
    says People. */
 function tabPeople(){
   const box = h('div', {});
+
+  /* Your own row, first. The Me tab holds your profile, the way to put an
+     email on an account that has none, and the way out — and until this was
+     here nothing anywhere navigated to it. */
+  if (state.user){
+    const meRow = state.me || {};
+    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' },
+      onclick(){ go('me'); } },
+      h('div.spread', {},
+        h('div.row', {}, avatar(meRow),
+          h('div', { style:{ minWidth:0 } },
+            h('div.up', {}, 'You'),
+            h('div', { style:{ fontWeight:700 } }, meRow.display_name || 'Bowler'),
+            h('div.tiny.muted', {}, state.user.email
+              ? 'Your profile, and the way to sign out'
+              : 'No email on this account yet \u2014 worth fixing'))),
+        h('span.chip', { cls: state.user.email ? '' : 'on' },
+          state.user.email ? 'open' : 'keep it'))));
+  } else {
+    box.append(h('button.card.tap', { style:{ display:'block', width:'100%' },
+      onclick(){ go('home'); } },
+      h('div.spread', {},
+        h('div', {}, h('div.up', {}, 'You'),
+          h('div', { style:{ fontWeight:700 } }, 'Not signed in'),
+          h('div.tiny.muted', {}, 'Tap your name on the home page and you are in')),
+        h('span.chip', {}, 'who am I'))));
+  }
+
   box.append(sectionHead('People',
     'Everybody in the book. Guests count exactly like accounts \u2014 same record, '
     + 'same money, same rankings.'));
