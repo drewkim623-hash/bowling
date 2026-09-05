@@ -153,9 +153,15 @@ somebody:
   become one person. His money lands on your account and Mike stops being a guest.
 - **An account this phone has signed in before** goes straight in, no password. The phone
   keeps a small ring of everyone who has signed in on it, which is what you want for the phone
-  that gets passed down the lane, and is not what you want on a borrowed one — **Sign out and
-  forget me here**, on the Me tab, empties it.
-- **Any other account** asks for the email and password. A name on a list is not a way in.
+  that gets passed down the lane.
+- **An account that never made a password** — anyone who came in by typing a name — is walked
+  into the same way a guest is, from any device. There is nothing to type, so asking for a
+  password would only be a locked door with no key. It confirms first, and it says why.
+- **Any account with an email on it** asks for the email and password. A name on a list is not
+  a way in, and the database refuses to hand one of these over however it is asked.
+
+**Signing out never loses an account.** It hands the phone to the next person; your name stays
+on the front door and tapping it brings you back.
 - **Nobody on the list?** *I am not on this list* → type a name → in.
 
 None of this gates reading. The leaderboard, the money book and the trophy case are open to

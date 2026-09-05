@@ -1426,8 +1426,8 @@ function demoFixture(){
 
    This is a real trade: anybody holding this unlocked phone can become any
    of these people without a password. That is the point on a group's phone
-   and a liability on a shared one, which is why "Forget me on this device"
-   sits next to every face and inside sign-out.
+   and a liability on a shared one. Signing out leaves the ring alone, so
+   handing the phone over does not lock anybody out of their own account.
    ====================================================================== */
 const DEVICE_KEY = 'bowl.device';
 function deviceRoster(){
@@ -1488,6 +1488,27 @@ function stubDB(){
       D.profiles.push({ id, display_name: name || 'Bowler', handle:null,
                         joined_at:new Date().toISOString() });
       rememberOnDevice(id, { access_token:'stub', refresh_token:'stub' }, name);
+      return {};
+    },
+    /* Mirrors claim_profile: everything pointing at the old name points at
+       you now, and the empty profile goes. */
+    async claimProfile(id){
+      const old = D.profiles.find(p => p.id === id);
+      if (!old) throw new Error('there is nobody by that name any more');
+      if (old.has_login) throw new Error('that account has a way of its own to sign in');
+      for (const g of D.games){
+        if (g.profile_id === id) g.profile_id = user.id;
+        if (g.logged_by === id) g.logged_by = user.id;
+      }
+      for (const m of D.money){
+        if (m.profile_id === id) m.profile_id = user.id;
+        if (m.created_by === id) m.created_by = user.id;
+      }
+      for (const p of D.players) if (p.profile_id === id) p.profile_id = user.id;
+      for (const x of D.sessions) if (x.created_by === id) x.created_by = user.id;
+      const mine = D.profiles.find(p => p.id === user.id);
+      if (mine) mine.display_name = old.display_name;
+      D.profiles = D.profiles.filter(p => p.id !== id);
       return {};
     },
     /* Mirrors claim_guest in schema.sql: the money moves, the guest goes. */
@@ -1659,6 +1680,20 @@ async function liveDB(){
       const { data, error } = await sb.auth.signInAnonymously({ options:{ data:{ display_name:name } } });
       if (error) throw anonError(error);
       if (data?.session) rememberOnDevice(data.session.user.id, data.session, name);
+      return {};
+    },
+    /* Walking back into a name that never had a password. Same shape as
+       claiming a guest, because it is the same situation. */
+    async claimProfile(id){
+      const { error } = await sb.rpc('claim_profile', { old_id: id });
+      if (error){
+        if (/claim_profile|function.*does not exist|schema cache/i.test(error.message || '')){
+          state.staleSchema = true;
+          throw new Error('This database has not been taught how to do that yet. '
+            + 'Run migrate-claim-account.sql in the Supabase SQL editor.');
+        }
+        throw error;
+      }
       return {};
     },
     async claimGuest(id){
@@ -2156,6 +2191,53 @@ function sessionSummary(ses){
    were on the same side, so this needs no scores and no team ever being typed.
    Each pair once, with how they did together and how each of them does apart —
    which is the only way to tell a good pairing from two good bowlers. */
+/* Who you win with, for sides of any size. Pairs are the usual question, but
+   on a night of threes the interesting unit is the three — naming the three
+   pairs inside it says less than naming the side that actually bowled.
+   `size` is how many to a side; the side has to be one the money can vouch
+   for, which is what `partnership` decides. */
+function moneySides(minGames = 2, rounds = D.moneyRounds, size = 2){
+  const map = new Map();
+  const seen = new Map();
+  for (const r of rounds){
+    for (const t of r.teams){
+      const side = new Set(t.players);
+      for (const key of t.players){
+        if (!seen.has(key)) seen.set(key, []);
+        seen.get(key).push({ won: t.won, side });
+      }
+      if (t.players.length !== size) continue;
+      if (size > 1 && !t.partnership) continue;   // the money cannot vouch for it
+      const sorted = [...t.players].sort();
+      const id = sorted.join('|');
+      if (!map.has(id)) map.set(id, { players: sorted, n:0, won:0, nights:new Set() });
+      const p = map.get(id);
+      p.n++; if (t.won) p.won++;
+      p.nights.add(r.session_id);
+    }
+  }
+  /* How often somebody wins WITHOUT this particular side. Their overall rate
+     will not do: it contains the games being measured, so a group who always
+     bowl together would be held up against themselves. */
+  const withoutPct = (key, others) => {
+    const games = (seen.get(key) || []).filter(g => !others.every(o => g.side.has(o)));
+    if (!games.length) return null;
+    return (games.filter(g => g.won).length / games.length) * 100;
+  };
+  return [...map.values()]
+    .filter(p => p.n >= minGames)
+    .map(p => {
+      const together = (p.won / p.n) * 100;
+      const solos = p.players.map(k => withoutPct(k, p.players.filter(o => o !== k)));
+      const have = solos.filter(v => v != null);
+      const apart = have.length ? have.reduce((a,b) => a+b, 0) / have.length : null;
+      return { ...p, nights: p.nights.size,
+               names: p.players.map(personName), solos,
+               together, apart, delta: apart == null ? null : together - apart };
+    })
+    .sort((x, y) => (y.delta ?? -999) - (x.delta ?? -999));
+}
+
 function moneyPairs(minGames = 3, rounds = D.moneyRounds){
   const map = new Map();
   /* every game each person played, and who was on their side for it */
@@ -3337,10 +3419,22 @@ function whoAreYouCard(){
           h('div.tiny.muted', {}, sub))));
 
   const people = h('div.people', {});
-  for (const p of accounts)
+  /* Three states, and the difference is only ever what it would cost to be
+     wrong about somebody:
+       this device knows them  — put the session back, straight in
+       they have a password    — ask for it; a name is not a way in
+       they never made one     — there is nothing to ask for. A name with no
+                                 password behind it is a guest by another
+                                 word, so it is walked into the same way. */
+  for (const p of accounts){
+    const known = deviceKnows(p.id);
+    const locked = !!p.has_login;
     people.append(face(p.display_name || 'Bowler',
-      deviceKnows(p.id) ? 'tap to sign in' : 'needs a password', avatar(p),
-      () => deviceKnows(p.id) ? resumeFace(p) : passwordFor(p)));
+      known ? 'tap to sign in' : locked ? 'needs a password' : 'no password — tap to be them',
+      avatar(p),
+      () => known ? resumeFace(p) : locked ? passwordFor(p)
+                  : claimFace({ id: p.id, name: p.display_name || 'Bowler', profile: true })));
+  }
   for (const g of guests)
     people.append(face(g.name, 'guest', nameChip(g.name), () => claimFace(g)));
 
@@ -3386,25 +3480,28 @@ function whoAreYouCard(){
 
   function claimFace(g){
     const berr = h('div.err', {});
-    const owed = moneySummaryKey(keyOfGuest(g.id));
+    const owed = moneySummaryKey(g.profile ? keyOfProfile(g.id) : keyOfGuest(g.id));
     const bits = [];
     if (owed.nights) bits.push(`${money(owed.net)} across ${owed.nights} ${owed.nights === 1 ? 'night' : 'nights'}`);
     openSheet('Is this you?', body => {
       body.append(
         h('p.small.ink2', {}, bits.length
-          ? `Everything the book has under ${g.name} — ${bits.join(', ')} — becomes yours, and “${g.name}” stops being a guest.`
-          : `You will become ${g.name}, and “${g.name}” stops being a guest.`),
+          ? `Everything the book has under ${g.name} — ${bits.join(', ')} — becomes yours.`
+          : `You will become ${g.name}.`),
+        h('p.tiny.muted', { style:{ marginTop:'6px' } }, g.profile
+          ? `${g.name} never put a password on this, so there is nothing to type. Tapping it is the way back in.`
+          : `“${g.name}” stops being a guest.`),
         berr,
         h('button.btn.pri.wide.big', { style:{ marginTop:'12px' }, async onclick(){
           berr.className = 'err'; berr.textContent = '';
           try {
             await db.anon({ name: g.name });
-            await db.claimGuest(g.id);
+            if (g.profile) await db.claimProfile(g.id); else await db.claimGuest(g.id);
             closeSheet(); await boot(true); toast(`You are ${g.name}.`);
           } catch (err){ berr.className = 'err'; berr.textContent = err.message || String(err); }
         } }, `Yes, I'm ${g.name}`),
         h('button.btn.wide', { style:{ marginTop:'8px' }, onclick: closeSheet }, 'No, that is somebody else'));
-    }, 'Tapping a guest takes over their history. Worth being sure.');
+    }, 'This takes over their whole history. Worth being sure.');
   }
 
   /* Nobody on the list. A name, and in you go. */
@@ -5393,6 +5490,11 @@ function tabPower(){
   box.append(sectionHead('Power rankings',
     'Off the book: how often you win, how much you take, how often you turn up. '
     + 'Nobody needs to log a score to be in here, so everybody is.'));
+  /* Power and Rating sit in neighbouring columns and are not the same number,
+     which is confusing until somebody says so out loud. */
+  box.append(h('p.tiny.muted', { style:{ margin:'-4px 2px 10px' } },
+    'Power is the whole answer \u2014 where you finish, the money and how often you turn up, '
+    + 'in one number. Rating is only the first of those: where you finished, and nothing else.'));
   if (!mrows.length){
     box.append(h('p.empty', {}, 'Keep the book on a night or two and this fills itself in.'));
   } else {
@@ -5485,6 +5587,16 @@ function tabPower(){
 }
 function POWER_GLOSS(){
   return [
+    ['Power, Rating and Win % are three different questions',
+      'Win % is the bluntest: how often you were on the winning side, where a four way and a head to head count the same. '
+      + 'Rating is finer — where you finished, out of 100. Winning outright is 100, finishing last is 0, and the middle of three is 50, '
+      + 'so beating three other sides counts for more than scraping second. It also leans on the games with fewest people beside you: '
+      + 'one to a side is worth four of a four man game. '
+      + 'Power is the whole answer, and Rating is one of the three things in it — the other two are how much money you take and how often you turn up. '
+      + 'So somebody can have a fine Rating and a middling Power if they never come out, or win narrowly and often and rank above somebody who wins big and rarely.'],
+    ['Where the two rankings differ',
+      'Power rankings ask who is winning. Bowling rankings, underneath, ask who bowls best — pins only, no money, no turnout. '
+      + 'A steady 190 who loses every night sits high on one and low on the other, and that is the point of having both.'],
     ['What this is', `One number out of 100 for how well somebody bowls. It is a weighted mix of ${B.POWER_PARTS.map(p => p[0].toLowerCase()).join(', ')} — nothing else goes in. The Power rankings above it are the other question: not who bowls best, but who is winning.`],
     ...B.POWER_PARTS.map(([label, weight, , blurb]) =>
       [`${label} — ${weight}%`, blurb.charAt(0).toUpperCase() + blurb.slice(1) + '.']),
@@ -5738,43 +5850,49 @@ function tabTeams(){
     return box;
   }
 
-  const pairs = size === 1 ? [] : moneyPairs(2, rounds);
+  /* On the All tab the sides are all sorts, so pairs are the only unit that
+     means anything across them. Inside a size, the side itself is the unit. */
+  const groupSize = size == null ? 2 : size;
+  const pairs = size === 1 ? [] : moneySides(2, rounds, groupSize);
+  const unit = groupSize === 2 ? 'Two people' : groupSize === 3 ? 'Three people' : 'Four people';
   if (size === 1){
     box.append(sectionHead('Who you win with',
       'Nobody \u2014 one to a side means there are no partners to have.'));
   } else
   box.append(sectionHead('Who you win with',
-    'Two people at the same number in the same game were on the same side, so this needs no scores and no team ever typed in. Two games together to appear.'));
+    `${unit} at the same number in the same game were on the same side, so this needs no scores and no team ever typed in. Two games together to appear.`));
   if (size === 1){
     /* nothing: said above */
   } else if (!pairs.length){
     box.append(h('p.empty', {}, 'No two people have been on the same side twice yet.'));
   } else {
+    const nameOf = p => p.names.join(' + ');
     const most = [...pairs].sort((a, b) => b.n - a.n)[0];
     /* with three pairs you have not got a best and a worst, you have got three
        numbers — so only claim one once there is a field to be top of */
     const enough = pairs.length >= 4;
     box.append(tiles([
-      tile('Most often together', `${most.nameA} + ${most.nameB}`,
+      tile('Most often together', nameOf(most),
         `${most.n} games, ${most.nights} night${most.nights === 1 ? '' : 's'}`),
-      enough ? tile('Best pairing', `${pairs[0].nameA} + ${pairs[0].nameB}`,
+      enough ? tile(groupSize === 2 ? 'Best pairing' : 'Best side', nameOf(pairs[0]),
                  `${pc(pairs[0].together)} together, ${pairs[0].n} games`)
-             : tile('Pairings so far', int(pairs.length), 'two games together or more'),
+             : tile(groupSize === 2 ? 'Pairings so far' : 'Sides so far',
+                 int(pairs.length), 'two games together or more'),
     ], 'two'));
     box.append(h('p.sub', { style:{ marginTop:'14px' } },
-      'How much better the two of them do together than they each do without '
-      + 'the other. A pair on +20 win twenty games in a hundred more often side '
-      + 'by side than they manage apart; a pair on \u221220 are better off split up.'));
+      `How much better they do together than they each do without the rest of `
+      + `the side. A ${groupSize === 2 ? 'pair' : 'side'} on +20 win twenty games in a hundred `
+      + `more often together than they manage apart; on \u221220 they are better off split up.`));
     box.append(card(divergingBars(pairs.filter(p => p.delta != null).map(p => ({
-      label: `${p.nameA}+${p.nameB}`, value: p.delta, unit:' pts',
-      tipText: `${p.nameA} + ${p.nameB} win ${pc(p.together)} of the ${p.n} games they `
-             + `have bowled on the same side. Without each other they win `
-             + `${pc(p.apart)} — ${p.nameA} ${pc(p.soloA)}, ${p.nameB} ${pc(p.soloB)}.`,
+      label: p.names.join('+'), value: p.delta, unit:' pts',
+      tipText: `${nameOf(p)} win ${pc(p.together)} of the ${p.n} games they have bowled `
+             + `on the same side. Without each other they win ${pc(p.apart)} — `
+             + p.names.map((n, i) => `${n} ${pc(p.solos[i])}`).join(', ') + '.',
     })))));
     box.append(h('div.card.pad0', {}, sortTable({
       initial:'delta', dir:-1,
       cols:[
-        { key:'pair', label:'Pair', text:true, value:p => `${p.nameA} + ${p.nameB}` },
+        { key:'pair', label: groupSize === 2 ? 'Pair' : 'Side', text:true, value:p => nameOf(p) },
         { key:'n', label:'Games together', value:p => p.n },
         { key:'nights', label:'Nights', value:p => p.nights },
         { key:'won', label:'Won', value:p => p.won },

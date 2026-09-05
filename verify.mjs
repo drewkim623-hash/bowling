@@ -551,6 +551,9 @@ function makeFixture(){
     { id:'tony',  display_name:'Tony',  handle:'tony'  },
     { id:'bruce', display_name:'Bruce', handle:'bruce' },
   ].map(p => ({ ...p, avatar_url:null, hand:'R', ball_weight:15, is_admin: p.id === 'me',
+                /* everybody in the fixture made a proper account with an email
+                   on it, so the front door asks them for a password */
+                has_login:true,
                 home_house:'Bowl America Fairfax', joined_at:'2025-01-01T00:00:00Z' }));
   const PAT = {
     179:[8,1, 7,3, 10, 9,0, 10, 10, 6,4, 8,2, 9,1, 10,7,2],
@@ -1546,6 +1549,18 @@ async function browserTests(){
   for (const [i, k] of P6.entries())
     szFx.money.push({ id:'y'+i, session_id:'f2', game_no:1, profile_id:k,
       amount_cents: i < 2 ? 500 : -500, created_by:'me', created_at:'2025-05-02T23:00:00Z' });
+  // 3v3, twice, so the trio clears the two-games bar
+  const SIX = ['me','nat','tony','bruce','steve','wanda'];
+  for (const p of ['steve','wanda'])
+    szFx.profiles.push({ id:p, display_name:p[0].toUpperCase()+p.slice(1), handle:null,
+      avatar_url:null, hand:'R', ball_weight:15, is_admin:false, has_login:true,
+      home_house:'Bowl America Fairfax', joined_at:'2025-01-01T00:00:00Z' });
+  szFx.sessions.push({ id:'f3', played_on:'2025-05-03', house:'Bowl America Fairfax',
+    created_by:'me', created_at:'2025-05-03T22:00:00Z' });
+  for (const g of [1, 2])
+    for (const [i, k] of SIX.entries())
+      szFx.money.push({ id:`t${g}${i}`, session_id:'f3', game_no:g, profile_id:k,
+        amount_cents: i < 3 ? 500 : -500, created_by:'me', created_at:'2025-05-03T23:00:00Z' });
   await sz.addInitScript(fx => { window.__FIXTURE = fx; }, szFx);
   await sz.goto(base + '?stub=1');
   await sz.waitForSelector('body[data-ready="1"]');
@@ -1553,8 +1568,8 @@ async function browserTests(){
   const segTxt = await sz.locator('#panel .seg').first().innerText();
   ok('the tab strip offers the sides that were actually bowled',
      /All/.test(segTxt) && /1v1/.test(segTxt) && /Pairs/.test(segTxt), segTxt.replace(/\n/g, ' '));
-  ok('and does not offer sides nobody has bowled',
-     !/Threes|Fours/.test(segTxt), segTxt.replace(/\n/g, ' '));
+  ok('and the threes night too', /Threes/.test(segTxt), segTxt.replace(/\n/g, ' '));
+  ok('but not a size nobody has bowled', !/Fours/.test(segTxt), segTxt.replace(/\n/g, ' '));
 
   await sz.locator('#panel .seg button', { hasText:'1v1' }).click();
   await sz.waitForTimeout(300);
@@ -1572,10 +1587,19 @@ async function browserTests(){
     const r = window.APP.D.recordBySize.get(2).get('p:me');
     return r && r.won === 1 && r.lost === 0;
   }));
-  ok('while the all time record still counts both', await sz.evaluate(() => {
+  ok('while the all time record still counts every format', await sz.evaluate(() => {
     const r = window.APP.D.recordOf.get('p:me');
-    return r && (r.won + r.lost + r.even) === 2;
+    return r && (r.won + r.lost + r.even) === 4;
   }));
+
+  await sz.locator('#panel .seg button', { hasText:'Threes' }).click();
+  await sz.waitForTimeout(300);
+  const threes = await sz.locator('#panel').innerText();
+  ok('threes names the whole side, not the pairs inside it',
+     /Drew \+ Nat \+ Tony|Drew \+ Tony \+ Nat|Nat \+ Drew \+ Tony/.test(threes)
+     || /\w+ \+ \w+ \+ \w+/.test(threes), threes.slice(0, 400));
+  ok('and calls them a side rather than a pair',
+     /\bSide\b/.test(threes) && !/Best pairing/.test(threes), threes.slice(0, 400));
   await sz.close();
 
   section('Power ranks off results, and leans on the small sides');
@@ -1801,6 +1825,52 @@ async function browserTests(){
   ok('after which People says you are not signed in',
      /not signed in/i.test(await out.locator('#panel').innerText()));
   await out.close();
+
+  section('A name with no password is never asked for one');
+  const nb = await ctx.newPage();
+  const nbFx = JSON.parse(JSON.stringify(fixture));
+  /* "ac" came in without an account, bowled, and has money. No email ever. */
+  nbFx.profiles.push({ id:'ac', display_name:'ac', handle:null, avatar_url:null,
+    hand:'R', ball_weight:15, is_admin:false, has_login:false,
+    home_house:'Bowl America Fairfax', joined_at:'2025-02-01T00:00:00Z' });
+  nbFx.money.push(
+    { id:'ac1', session_id:'ses1', game_no:2, profile_id:'ac',   amount_cents: 8000,
+      created_by:'me', created_at:'2025-03-08T23:10:00Z' },
+    { id:'ac2', session_id:'ses1', game_no:2, profile_id:'tony', amount_cents:-8000,
+      created_by:'me', created_at:'2025-03-08T23:10:00Z' });
+  await nb.addInitScript(fx => { window.__FIXTURE = fx; }, nbFx);
+  await nb.goto(base + '?stub=1');          // a device that has never met anybody
+  await nb.waitForSelector('body[data-ready="1"]');
+  const nbTxt = await nb.locator('#panel').innerText();
+  ok('an account that never made a password is not asked for one',
+     /no password/i.test(nbTxt), nbTxt.slice(0, 300));
+  ok('while accounts that do have one still are', /needs a password/i.test(nbTxt));
+
+  await nb.locator('.person.tap', { hasText:'no password' }).first().click();
+  await nb.waitForTimeout(250);
+  const nbSheet = await nb.locator('.sheet').innerText();
+  ok('tapping it asks before it moves anything', /is this you/i.test(nbSheet));
+  ok('and says why there is nothing to type',
+     /never put a password/i.test(nbSheet), nbSheet.slice(0, 300));
+  ok('and what is being taken on', /80/.test(nbSheet), nbSheet.slice(0, 300));
+
+  await nb.locator('.sheet button', { hasText:/Yes, I/ }).first().click();
+  await nb.waitForTimeout(400);
+  ok('confirming walks you back in with no password anywhere',
+     await nb.evaluate(() => !!window.APP.state.user));
+  ok('under their name', await nb.evaluate(() =>
+     window.APP.state.profiles.find(p => p.id === window.APP.state.user.id)?.display_name === 'ac'));
+  ok('holding their money', await nb.evaluate(() => {
+    const me = window.APP.state.user.id;
+    return window.APP.state.money.some(m => m.profile_id === me && m.amount_cents === 8000);
+  }));
+  ok('and the empty profile is gone rather than doubled up',
+     await nb.evaluate(() => window.APP.state.profiles.filter(p => p.display_name === 'ac').length === 1));
+
+  ok('and nobody else on the door became walk-in-able',
+     !/no password/i.test(await nb.locator('#panel').innerText())
+     || await nb.evaluate(() => !window.APP.state.user));
+  await nb.close();
 
   section('A newcomer needs nothing but a name');
   const fresh = await ctx.newPage();
