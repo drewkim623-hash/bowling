@@ -3428,7 +3428,10 @@ function whoAreYouCard(){
                                  word, so it is walked into the same way. */
   for (const p of accounts){
     const known = deviceKnows(p.id);
-    const locked = !!p.has_login;
+    /* Fail closed. On a database that has not been given has_login yet the
+       column is simply absent, and treating absent as "no password" would
+       offer every real account up to be walked into. Missing means locked. */
+    const locked = !('has_login' in p) || !!p.has_login;
     people.append(face(p.display_name || 'Bowler',
       known ? 'tap to sign in' : locked ? 'needs a password' : 'no password — tap to be them',
       avatar(p),

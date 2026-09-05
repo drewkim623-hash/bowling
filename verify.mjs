@@ -1846,6 +1846,20 @@ async function browserTests(){
      /no password/i.test(nbTxt), nbTxt.slice(0, 300));
   ok('while accounts that do have one still are', /needs a password/i.test(nbTxt));
 
+  /* A database that has not run the migration has no has_login at all, and
+     must not offer every real account up as a walk in. */
+  const old = await ctx.newPage();
+  const oldFx = JSON.parse(JSON.stringify(nbFx));
+  for (const p of oldFx.profiles) delete p.has_login;
+  await old.addInitScript(fx => { window.__FIXTURE = fx; }, oldFx);
+  await old.goto(base + '?stub=1');
+  await old.waitForSelector('body[data-ready="1"]');
+  ok('before the column exists, nobody is offered up as a walk in',
+     !/no password/i.test(await old.locator('#panel').innerText()));
+  ok('and everybody is asked for a password instead',
+     /needs a password/i.test(await old.locator('#panel').innerText()));
+  await old.close();
+
   await nb.locator('.person.tap', { hasText:'no password' }).first().click();
   await nb.waitForTimeout(250);
   const nbSheet = await nb.locator('.sheet').innerText();
