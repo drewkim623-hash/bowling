@@ -1005,16 +1005,19 @@ function placeScores(out){
 const PRIOR = 6;
 const MONEY_POWER_PARTS = [
   ['Where you finish', 5, r => {
-    const played = r.won + r.lost;
+    const played = r.won + r.lost + (r.even || 0);
     if (!played) return null;
-    /* rating, not the raw win column: winning a four-way outright should be
-       worth more than scraping second in the same game. Then pulled toward
-       even until somebody has played enough to have proved anything. */
-    const got = (r.rating != null ? r.rating / 100 : (r.won / played)) * played;
-    return (got + PRIOR / 2) / (played + PRIOR);
-  }, 'where you finish in each game, pulled toward even until you have played enough'],
+    /* The weighted placement, not the raw win column. Winning a four-way
+       outright should be worth more than scraping second in the same game,
+       and a game with nobody else on your side should be worth more than one
+       where three other people were also throwing. Then pulled toward even
+       until somebody has played enough to have proved anything. */
+    const place = r.weighted != null ? r.weighted / 100
+                : r.rating != null ? r.rating / 100 : (r.won / played);
+    return (place * played + PRIOR / 2) / (played + PRIOR);
+  }, 'where you finish in each game, leaning on the games with fewest people on your side — one to a side counts four times a four man game — and pulled toward even until you have played enough'],
   ['How much you take', 3, r => {
-    const played = r.won + r.lost;
+    const played = r.won + r.lost + (r.even || 0);
     if (!played) return null;
     /* a dollar a game either way is a big night out for this crowd, so that is
        the top and bottom of the scale */
@@ -1028,7 +1031,7 @@ function moneyPower(r){
   const parts = MONEY_POWER_PARTS
     .map(([label, weight, get, blurb]) => ({ label, weight, blurb, value: get(r) }))
     .filter(p => p.value != null);
-  if (!parts.length || !(r.won + r.lost)) return { score: null, parts: [] };
+  if (!parts.length || !(r.won + r.lost + (r.even || 0))) return { score: null, parts: [] };
   const total = parts.reduce((a, p) => a + p.weight, 0);
   return {
     score: parts.reduce((a, p) => a + p.weight * p.value, 0) / total * 100,
@@ -1964,14 +1967,38 @@ function derive(){
 
   /* Everybody's record, keyed by person rather than by account — so a guest
      who is never going to sign up has one exactly like everybody else. */
-  D.recordOf = new Map();
+  D.recordOf = buildRecordOf(D.moneyRounds);
+  /* The same record again, but only counting nights of a given side size, so
+     the Teams tab can ask "how do I do two to a side?" separately from three.
+     A game counts for a size when every side in it was that size — an uneven
+     2v3 belongs to neither and only shows up under All. */
+  D.recordBySize = new Map();
+  D.roundsBySize = new Map();
+  for (const size of SIDE_SIZES){
+    const rounds = D.moneyRounds.filter(r =>
+      r.teams.length > 1 && r.teams.every(t => t.players.length === size));
+    D.roundsBySize.set(size, rounds);
+    D.recordBySize.set(size, buildRecordOf(rounds));
+  }
+  buildTheRest();
+}
+const SIDE_SIZES = [1, 2, 3, 4];
+/* How much a result counts, by how many were on your side. The fewer people
+   standing next to you, the less of it was somebody else — so one to a side
+   is worth four of a four-man game. A side bigger than four counts the same
+   as a four. */
+const SIDE_WEIGHT = { 1: 4, 2: 3, 3: 2, 4: 1 };
+const sideWeight = n => SIDE_WEIGHT[n] || 1;
+
+function buildRecordOf(rounds){
+  const recordOf = new Map();
   const reachFor = key => {
-    if (!D.recordOf.has(key))
-      D.recordOf.set(key, { key, won:0, lost:0, even:0, points:0, scored:0,
-                            nights:new Set(), mates:new Map() });
-    return D.recordOf.get(key);
+    if (!recordOf.has(key))
+      recordOf.set(key, { key, won:0, lost:0, even:0, points:0, scored:0,
+                          wpoints:0, wden:0, nights:new Set(), mates:new Map() });
+    return recordOf.get(key);
   };
-  for (const r of D.moneyRounds){
+  for (const r of rounds){
     const place = new Map(B.placeScores(r).map(p => [p.key, p]));
     for (const t of r.teams){
       for (const key of t.players){
@@ -1981,7 +2008,13 @@ function derive(){
            side of a three-way night got billed as beaten. */
         if (t.won) p.won++; else if (t.lost) p.lost++; else p.even++;
         const sc = place.get(key);
-        if (sc){ p.points += sc.score; p.scored++; }
+        if (sc){
+          p.points += sc.score; p.scored++;
+          /* the same placement again, but leaning on the games where there
+             was nowhere to hide */
+          const w = sideWeight(t.players.length);
+          p.wpoints += w * sc.score; p.wden += w;
+        }
         /* only where the money actually says who was with whom */
         if (!t.partnership) continue;
         for (const mate of t.players){
@@ -1993,7 +2026,10 @@ function derive(){
       }
     }
   }
+  return recordOf;
+}
 
+function buildTheRest(){
   D.stats = new Map(state.profiles.map(p => [p.id, careerOf(p.id)]));
   D.sessions = state.sessions.map(sessionSummary)
     .sort((a,b) => b.played_on.localeCompare(a.played_on) || b.created_at.localeCompare(a.created_at));
@@ -2120,7 +2156,7 @@ function sessionSummary(ses){
    were on the same side, so this needs no scores and no team ever being typed.
    Each pair once, with how they did together and how each of them does apart —
    which is the only way to tell a good pairing from two good bowlers. */
-function moneyPairs(minGames = 3){
+function moneyPairs(minGames = 3, rounds = D.moneyRounds){
   const map = new Map();
   /* every game each person played, and who was on their side for it */
   const seen = new Map();
@@ -2128,7 +2164,7 @@ function moneyPairs(minGames = 3){
     if (!seen.has(key)) seen.set(key, []);
     seen.get(key).push({ won, side });
   };
-  for (const r of D.moneyRounds){
+  for (const r of rounds){
     for (const t of r.teams){
       const side = new Set(t.players);
       for (const key of t.players) note(key, t.won, side);
@@ -3618,7 +3654,7 @@ function tabHome(){
      Scores are the thing nobody logs, so leading on them meant leading on an
      empty page. Everything above the rule is off the money, which always gets
      kept; the bowling is still here, underneath, for whoever logs it. */
-  const standings = everyPersonKey().map(moneyRecord).filter(r => r.played > 0)
+  const standings = everyPersonKey().map(k => moneyRecord(k)).filter(r => r.played > 0)
     .sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1) || b.net - a.net);
   const last = lastNight();
   const openNight = D.sessions.find(x => !x.finished_at && (D.roundsOfNight.get(x.id) || []).length);
@@ -3658,7 +3694,7 @@ function tabHome(){
     box.append(sectionHead('Where everybody stands',
       'Off the money. Rating is where you finish, so winning a four-way outright beats scraping second in it.'));
     box.append(h('div.card', {}, standings.map(r => {
-      const played2 = r.won + r.lost;
+      const played2 = r.won + r.lost + r.even;
       return h('div.recrow', {},
         h('div', {}, h('div', { style:{ fontWeight:650 } }, r.name,
             r.guest ? h('span.tiny.muted', {}, ' guest') : null),
@@ -4161,19 +4197,20 @@ function moneyNightsForKey(key){
 }
 /* What the money says about one person: what they took, what they paid for,
    and who they took it with. Everything here works for a guest. */
-function moneyRecord(key){
-  const r = D.recordOf.get(key);
+function moneyRecord(key, recs = D.recordOf){
+  const r = recs.get(key);
   const net = D.moneyByPerson.get(key) || 0;
   const base = { key, name: personName(key), guest: personIsGuest(key),
                  profile: personIsGuest(key) ? null : D.profile.get(key.slice(2)), net };
   if (!r) return { ...base, won:0, lost:0, even:0, played:0, winPct:null, rating:null, nights:0, mates:[] };
-  const played = r.won + r.lost + r.even;
+  const played = r.won + r.lost + (r.even || 0);
   const mates = [...r.mates.entries()]
     .map(([k, m]) => ({ key:k, name: personName(k), n:m.n, won:m.won,
                         winPct: m.n ? (m.won / m.n) * 100 : null }))
     .sort((a,b) => b.n - a.n);
   return { ...base, won:r.won, lost:r.lost, even:r.even, played,
            winPct: played ? (r.won / played) * 100 : null,
+           weighted: r.wden ? (r.wpoints / r.wden) * 100 : null,
            /* where you finished, averaged. Identical to win % on a night of
               straight two-sided games, and pulls apart from it the moment
               somebody wins a four-way by more than somebody else. */
@@ -4189,8 +4226,8 @@ function nightTallyOf(sid){
   const tally = new Map();
   for (const r of (D.roundsOfNight.get(sid) || []))
     for (const t of r.teams) for (const key of t.players){
-      const e = tally.get(key) || { key, won:0, lost:0, net:0 };
-      if (t.won) e.won++; else e.lost++;
+      const e = tally.get(key) || { key, won:0, lost:0, even:0, net:0 };
+      if (t.won) e.won++; else if (t.lost) e.lost++; else e.even++;
       tally.set(key, e);
     }
   for (const m of (D.moneyBySession.get(sid) || [])){
@@ -4774,8 +4811,8 @@ function moneyLedger(ses){
     const tally = new Map();
     for (const r of nightRounds())
       for (const t of r.teams) for (const k of t.players){
-        const e = tally.get(k) || { key:k, won:0, lost:0 };
-        if (t.won) e.won++; else e.lost++;
+        const e = tally.get(k) || { key:k, won:0, lost:0, even:0 };
+        if (t.won) e.won++; else if (t.lost) e.lost++; else e.even++;
         tally.set(k, e);
       }
     return [...tally.values()].map(e => ({ ...e, net: totalFor(e.key) }))
@@ -4785,7 +4822,7 @@ function moneyLedger(ses){
     const rows = nightTally();
     if (!rows.length) return h('p.empty', {}, 'Type some numbers in and the record writes itself.');
     return h('div.card', {}, rows.map(r => {
-      const played = r.won + r.lost;
+      const played = r.won + r.lost + (r.even || 0);
       return h('div.recrow', {},
         h('div', {}, h('div', { style:{ fontWeight:650 } }, personName(r.key),
             personIsGuest(r.key) ? h('span.tiny.muted', {}, ' guest') : null),
@@ -5325,6 +5362,8 @@ function powerInput(st){
     form: (st.last10avg != null && st.avg != null) ? st.last10avg - st.avg : null,
   };
 }
+const MIN_MONEY_GAMES = 6;
+
 function powerRows(){
   return [...D.stats.values()]
     .filter(st => st.games >= MIN_GAMES)
@@ -5342,7 +5381,7 @@ function powerBreakdown(r){
 /* Everybody the book has a record for, ranked on it. No score required, so
    this is the one that is actually full. */
 function moneyPowerRows(){
-  return everyPersonKey().map(moneyRecord).filter(r => r.played > 0)
+  return everyPersonKey().map(k => moneyRecord(k)).filter(r => r.played > 0)
     .map(r => ({ ...r, ...B.moneyPower(r) }))
     .filter(r => r.score != null)
     .sort((a, b) => b.score - a.score);
@@ -5446,7 +5485,7 @@ function tabPower(){
 }
 function POWER_GLOSS(){
   return [
-    ['What this is', `One number out of 100 for how well somebody bowls. It is a weighted mix of ${B.POWER_PARTS.map(p => p[0].toLowerCase()).join(', ')} — nothing else goes in.`],
+    ['What this is', `One number out of 100 for how well somebody bowls. It is a weighted mix of ${B.POWER_PARTS.map(p => p[0].toLowerCase()).join(', ')} — nothing else goes in. The Power rankings above it are the other question: not who bowls best, but who is winning.`],
     ...B.POWER_PARTS.map(([label, weight, , blurb]) =>
       [`${label} — ${weight}%`, blurb.charAt(0).toUpperCase() + blurb.slice(1) + '.']),
     ['No handicap here', 'The handicap on the Home tab exists so everybody has a chance on the night. This table is the opposite: it is only about skill, so a low average cannot be dressed up.'],
@@ -5570,9 +5609,9 @@ function moneyRecords(){
     for (const k of r.evens) run.set(k, 0);      // level ends a run of wins too
   }
   const streak = [...best.entries()].sort((a, b) => b[1] - a[1])[0] || null;
-  const ranked = everyPersonKey().map(moneyRecord).filter(r => r.played >= 8);
+  const ranked = everyPersonKey().map(k => moneyRecord(k)).filter(r => r.played >= 8);
   const sharpest = [...ranked].sort((a, b) => b.winPct - a.winPct)[0] || null;
-  const busiest  = everyPersonKey().map(moneyRecord).sort((a, b) => b.nights - a.nights)[0] || null;
+  const busiest  = everyPersonKey().map(k => moneyRecord(k)).sort((a, b) => b.nights - a.nights)[0] || null;
   return { bestNight, worstNight, streak, sharpest, busiest };
 }
 
@@ -5664,12 +5703,51 @@ function tabRecords(){
 /* ======================================================================
    TAB 6 — TEAMS
    ====================================================================== */
+/* How many to a side. 2v2 and 2v2v2 are both "two to a side", because that is
+   the thing that changes how a night plays — not how many sides there were.
+   One to a side is everybody for themselves: a different number for everyone. */
+const SIDE_TABS = [
+  ['all', 'All',    null, 'Every game with money against it, whatever the sides were.'],
+  ['1',   '1v1',    1,    'Everybody for themselves \u2014 a different number for every person.'],
+  ['2',   'Pairs',  2,    'Two to a side. 2v2 and 2v2v2 both count here.'],
+  ['3',   'Threes', 3,    'Three to a side.'],
+  ['4',   'Fours',  4,    'Four to a side.'],
+];
+let teamsTab = 'all';
+
 function tabTeams(){
   const box = h('div', {});
-  const pairs = moneyPairs(2);
+  const picked = SIDE_TABS.find(t => t[0] === teamsTab) || SIDE_TABS[0];
+  const size = picked[2];
+  const rounds = size == null ? D.moneyRounds : (D.roundsBySize.get(size) || []);
+  const recs2  = size == null ? D.recordOf    : (D.recordBySize.get(size) || new Map());
+
+  /* Only offer a size somebody has actually bowled, so the strip does not
+     fill up with empty tabs on a book of nothing but doubles. */
+  const seg = h('div.seg', {});
+  for (const [id, label, sz] of SIDE_TABS){
+    if (sz != null && !(D.roundsBySize.get(sz) || []).length && teamsTab !== id) continue;
+    seg.append(h('button', { 'aria-pressed': teamsTab === id,
+      onclick(){ teamsTab = id; render(); } }, label));
+  }
+  if (seg.children.length > 1) box.append(seg);
+  box.append(h('p.tiny.muted', { style:{ margin:'8px 2px 4px' } }, picked[3]));
+
+  if (size != null && !rounds.length){
+    box.append(h('p.empty', {}, `No game has been bowled ${size} to a side yet.`));
+    return box;
+  }
+
+  const pairs = size === 1 ? [] : moneyPairs(2, rounds);
+  if (size === 1){
+    box.append(sectionHead('Who you win with',
+      'Nobody \u2014 one to a side means there are no partners to have.'));
+  } else
   box.append(sectionHead('Who you win with',
     'Two people at the same number in the same game were on the same side, so this needs no scores and no team ever typed in. Two games together to appear.'));
-  if (!pairs.length){
+  if (size === 1){
+    /* nothing: said above */
+  } else if (!pairs.length){
     box.append(h('p.empty', {}, 'No two people have been on the same side twice yet.'));
   } else {
     const most = [...pairs].sort((a, b) => b.n - a.n)[0];
@@ -5712,8 +5790,10 @@ function tabTeams(){
   /* Read off the money, not off the score sheet — so this fills in on every
      night anybody keeps the book, and a guest who will never make an account
      has a record here like everybody else. */
-  box.append(sectionHead('Career record', 'Every game the book has money against. Guests included.'));
-  const recs = everyPersonKey().map(moneyRecord).filter(r => r.played > 0);
+  box.append(sectionHead('Career record', size == null
+    ? 'Every game the book has money against. Guests included.'
+    : `Only the games bowled ${size} to a side. Guests included.`));
+  const recs = everyPersonKey().map(k => moneyRecord(k, recs2)).filter(r => r.played > 0);
   box.append(h('div.card.pad0', {}, sortTable({
     initial:'pct', dir:-1,
     onRow:r => { if (!r.guest) showBowler(r.key.slice(2)); },
@@ -5723,6 +5803,9 @@ function tabTeams(){
       { key:'played', label:'Games', value:r => r.played },
       { key:'won', label:'Won', value:r => r.won },
       { key:'lost', label:'Lost', value:r => r.lost },
+      /* Without this the row does not add up: games counts the nights you
+         came out level, and won and lost between them do not. */
+      { key:'even', label:'Level', value:r => r.even },
       { key:'pct', label:'Win %', value:r => r.winPct, fmt:pc },
       { key:'rating', label:'Rating', value:r => r.rating, fmt:v => v == null ? '—' : Math.round(v) },
       { key:'nights', label:'Nights', value:r => r.nights },
@@ -5734,7 +5817,7 @@ function tabTeams(){
 
   box.append(sectionHead('Recent games', 'Each game and the sides read off the money.'));
   const nights = new Map(D.sessions.map(x => [x.id, x]));
-  const moneyRecent = [...D.moneyRounds]
+  const moneyRecent = [...rounds]
     .filter(r => r.winners.length && r.losers.length && nights.has(r.session_id))
     .sort((a, b) => (nights.get(b.session_id).played_on).localeCompare(nights.get(a.session_id).played_on)
                  || b.game_no - a.game_no).slice(0, 12);
@@ -5846,18 +5929,19 @@ function tabMe(){
       } }, 'Save new password')));
   }
 
-  /* Signing out of an account with no email is a one way door, so it does not
-     get to look like the same button as everybody else's. */
+  /* Signing out is putting the phone down, not burning the account. This
+     device keeps hold of you either way, so your face is still on the front
+     door and one tap brings you back. Actually getting rid of yourself is the
+     second button, which says so. */
   box.append(card(
     h('div.up', {}, 'This device'),
-    h('p.small.ink2', { style:{ marginTop:'4px' } }, anon
-      ? 'Signing out of an account with no email is final \u2014 there is no password to get back in with. Add an email above first if you want to keep it.'
-      : 'This device remembers you so you can tap your face instead of typing a password. Forget it on a phone that is not yours.'),
-    h('button.btn.wide.danger', { style:{ marginTop:'10px' }, async onclick(){
-      if (anon && !confirm('There is no email on this account, so signing out means you cannot get back in. Your games stay in the book but nobody can edit them. Sign out anyway?')) return;
-      forgetOnDevice(state.user.id);
-      await db.signOut(); await boot(true); toast('Signed out');
-    } }, anon ? 'Sign out and lose this account' : 'Sign out and forget me here')));
+    h('p.small.ink2', { style:{ marginTop:'4px' } },
+      'Signing out just hands the phone over. You stay on the front door and '
+      + 'tapping your name brings you straight back'
+      + (anon ? ' \u2014 no password, because there is nothing to type.' : '.')),
+    h('button.btn.wide', { style:{ marginTop:'10px' }, async onclick(){
+      await db.signOut(); await boot(true); toast('Signed out \u2014 tap your name to come back');
+    } }, 'Sign out')));
 
   box.append(glossary([GLOSS.hcap, GLOSS.quick,
     ['Editing', 'You can change or delete any game you bowled or any game you logged for someone else. The original is kept and shown in the history — that is the deal.'],
@@ -5966,7 +6050,7 @@ function tabPeople(){
       'Somebody added by name is a guest. They do not need an account and most '
       + 'people never get one \u2014 it makes no difference to anything the book counts.')));
 
-  const everyone = everyPersonKey().map(moneyRecord)
+  const everyone = everyPersonKey().map(k => moneyRecord(k))
     .sort((a, b) => a.name.localeCompare(b.name));
   if (!everyone.length){
     box.append(h('p.empty', {}, 'Nobody yet. Add the first name above.'));

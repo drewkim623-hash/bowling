@@ -1528,6 +1528,104 @@ async function browserTests(){
   ok('the status bar gets a colour', await page.evaluate(() =>
      document.querySelector('meta[name=theme-color]')?.content === '#0b0b0f'));
 
+  section('Teams, split by how many to a side');
+  const sz = await ctx.newPage();
+  /* one night of 1v1 free for all, one of 2v2v2, one of 3v3 */
+  const szFx = JSON.parse(JSON.stringify(fixture));
+  szFx.money = [];
+  const P6 = ['me','nat','tony','bruce'];
+  szFx.sessions = [
+    { id:'f1', played_on:'2025-05-01', house:'Bowl America Fairfax', created_by:'me', created_at:'2025-05-01T22:00:00Z' },
+    { id:'f2', played_on:'2025-05-02', house:'Bowl America Fairfax', created_by:'me', created_at:'2025-05-02T22:00:00Z' },
+  ];
+  // 1v1: four different amounts, so four sides of one
+  for (const [i, k] of P6.entries())
+    szFx.money.push({ id:'z'+i, session_id:'f1', game_no:1, profile_id:k,
+      amount_cents: [1500,500,-500,-1500][i], created_by:'me', created_at:'2025-05-01T23:00:00Z' });
+  // 2v2: two sides of two
+  for (const [i, k] of P6.entries())
+    szFx.money.push({ id:'y'+i, session_id:'f2', game_no:1, profile_id:k,
+      amount_cents: i < 2 ? 500 : -500, created_by:'me', created_at:'2025-05-02T23:00:00Z' });
+  await sz.addInitScript(fx => { window.__FIXTURE = fx; }, szFx);
+  await sz.goto(base + '?stub=1');
+  await sz.waitForSelector('body[data-ready="1"]');
+  await goTo(sz, 'teams');
+  const segTxt = await sz.locator('#panel .seg').first().innerText();
+  ok('the tab strip offers the sides that were actually bowled',
+     /All/.test(segTxt) && /1v1/.test(segTxt) && /Pairs/.test(segTxt), segTxt.replace(/\n/g, ' '));
+  ok('and does not offer sides nobody has bowled',
+     !/Threes|Fours/.test(segTxt), segTxt.replace(/\n/g, ' '));
+
+  await sz.locator('#panel .seg button', { hasText:'1v1' }).click();
+  await sz.waitForTimeout(300);
+  const oneTxt = await sz.locator('#panel').innerText();
+  ok('one to a side says there are no partners to have',
+     /no partners to have/i.test(oneTxt), oneTxt.slice(0, 200));
+  ok('and counts only the free for all game', await sz.evaluate(() =>
+     window.APP.D.roundsBySize.get(1).length === 1));
+
+  await sz.locator('#panel .seg button', { hasText:'Pairs' }).click();
+  await sz.waitForTimeout(300);
+  ok('two to a side counts only the doubles game', await sz.evaluate(() =>
+     window.APP.D.roundsBySize.get(2).length === 1));
+  ok('and the career record follows the tab', await sz.evaluate(() => {
+    const r = window.APP.D.recordBySize.get(2).get('p:me');
+    return r && r.won === 1 && r.lost === 0;
+  }));
+  ok('while the all time record still counts both', await sz.evaluate(() => {
+    const r = window.APP.D.recordOf.get('p:me');
+    return r && (r.won + r.lost + r.even) === 2;
+  }));
+  await sz.close();
+
+  section('Power ranks off results, and leans on the small sides');
+  const pw = await ctx.newPage();
+  const who = ['me','nat','a1','a2','a3','b1','b2','b3'];
+  const pwFx = { profiles: who.map(id => ({ id, display_name: id === 'me' ? 'Drew' : id === 'nat' ? 'Nat' : id.toUpperCase(),
+                   hand:'R', home_house:'H', joined_at:'2025-01-01' })),
+    sessions:[], players:[], games:[], rolls:[], edits:[], money:[], guests:[] };
+  /* Drew wins every game one to a side and loses every game four to a side.
+     Nat does the exact opposite. Flat, they are identical: one win, one loss
+     each, every night. Only the weighting can tell them apart. */
+  for (let n = 1; n <= 8; n++){
+    const sid = 'w' + n, when = '2025-06-01T23:00:00Z';
+    pwFx.sessions.push({ id:sid, played_on:'2025-06-0' + ((n % 9) || 1), house:'H',
+      created_by:'me', created_at:'2025-06-01T22:00:00Z' });
+    const put = (g, k, c) => pwFx.money.push({ id:`${sid}-${g}-${k}`, session_id:sid,
+      game_no:g, profile_id:k, amount_cents:c, created_by:'me', created_at:when });
+    put(1, 'me', 500); put(1, 'nat', -500);                       // one to a side
+    for (const k of ['nat','b1','b2','b3']) put(2, k,  500);      // four to a side
+    for (const k of ['me','a1','a2','a3'])  put(2, k, -500);
+  }
+  await pw.addInitScript(fx => { window.__FIXTURE = fx; }, pwFx);
+  await pw.goto(base + '?stub=1');
+  await pw.waitForSelector('body[data-ready="1"]');
+  await goTo(pw, 'power');
+  const pwTxt = await pw.locator('#panel').innerText();
+  /* The money ranking covers everybody; the pins ranking underneath is the
+     one that needs scores, and correctly says it has none. */
+  ok('the money ranking works with no scored game anywhere in the book',
+     /Drew/.test(pwTxt) && /Off the book/.test(pwTxt), pwTxt.slice(0, 160));
+  ok('and the pins ranking underneath says it needs scores',
+     /scored games yet/i.test(pwTxt));
+  const sc = await pw.evaluate(() => {
+    const D = window.APP.D, out = {};
+    for (const k of ['p:me','p:nat']){
+      const r = D.recordOf.get(k);
+      out[k.slice(2)] = { weighted: Math.round((r.wpoints / r.wden) * 100),
+                          flat: Math.round((r.points / r.scored) * 100) };
+    }
+    return out;
+  });
+  ok('flat, the two of them are indistinguishable',
+     sc.me.flat === 50 && sc.nat.flat === 50, JSON.stringify(sc));
+  ok('weighted, winning one to a side is worth far more than winning four to a side',
+     sc.me.weighted === 80 && sc.nat.weighted === 20, JSON.stringify(sc));
+  ok('and the ranking puts the one to a side winner on top',
+     (await pw.evaluate(() => window.APP.D && null)) === null
+     && pwTxt.indexOf('Drew') < pwTxt.indexOf('Nat'), pwTxt.slice(0, 160));
+  await pw.close();
+
   section('Signed out, nothing is walled off');
   /* A guest with money on him, so the front door has somebody to claim. */
   const guestFx = JSON.parse(JSON.stringify(fixture));
@@ -1600,7 +1698,26 @@ async function browserTests(){
   await goTo(door, 'me');
   const meTxt = await door.locator('#panel').innerText();
   ok('an account with no email is told how to keep it', /add an email/i.test(meTxt));
-  ok('and warned that signing out is the end of it', /lose this account/i.test(meTxt));
+  ok('and can sign out without losing it', /tapping your name brings you straight back/i.test(meTxt));
+  ok('and is not offered a way to lock itself out', !/forget me/i.test(meTxt));
+
+  /* The thing that made an account with no email feel like a trap: you signed
+     out and that was that. Signing out has to be a door, not a cliff. */
+  const anonId = await door.evaluate(() => window.APP.state.user.id);
+  await door.locator('button', { hasText:/^Sign out$/ }).first().click();
+  await door.waitForTimeout(400);
+  ok('an account with no email can sign out',
+     await door.evaluate(() => !window.APP.state.user));
+  ok('and is still on the front door afterwards',
+     /Mike/.test(await door.locator('#panel').innerText()));
+  ok('offering the one tap way back, not a password',
+     /tap to sign in/i.test(await door.locator('#panel').innerText()));
+  await door.locator('.person.tap', { hasText:'Mike' }).first().click();
+  await door.waitForTimeout(400);
+  ok('and tapping it puts the same person back in',
+     await door.evaluate(id => window.APP.state.user?.id === id, anonId));
+  ok('with their money still theirs', await door.evaluate(id =>
+     window.APP.state.money.some(m => m.profile_id === id && m.amount_cents === -4000), anonId));
   await door.close();
 
   section('A device that has met you already');
@@ -1627,15 +1744,22 @@ async function browserTests(){
   await goTo(known, 'me');
   ok('an account with an email is offered a password change, not a rescue',
      /change password/i.test(await known.locator('#panel').innerText()));
-  ok('and signing out offers to forget the device',
-     /forget me here/i.test(await known.locator('#panel').innerText()));
-  await known.locator('button', { hasText:'Sign out and forget me here' }).first().click();
+  /* Signing out is putting the phone down, not burning the account. */
+  await known.locator('button', { hasText:/^Sign out$/ }).first().click();
   await known.waitForTimeout(400);
-  ok('signing out drops that face from the ring', await known.evaluate(() =>
-     !JSON.parse(localStorage.getItem('bowl.device') || '{}').me));
-  ok('so the door asks for a password again',
-     /needs a password/i.test(await known.locator('#panel').innerText())
-     && !/tap to sign in/i.test(await known.locator('#panel').innerText()));
+  ok('signing out really does sign you out',
+     await known.evaluate(() => !window.APP.state.user));
+  ok('but it keeps you on the device, so you can walk back in',
+     await known.evaluate(() => !!JSON.parse(localStorage.getItem('bowl.device') || '{}').me));
+  ok('and the door still offers you the one tap way in',
+     /tap to sign in/i.test(await known.locator('#panel').innerText()));
+  await known.locator('.person.tap', { hasText:'Drew' }).first().click();
+  await known.waitForTimeout(400);
+  ok('which puts you straight back in with no password',
+     await known.evaluate(() => window.APP.state.user?.id === 'me'));
+
+  ok('and there is no button offering to lock you out of your own account',
+     !/forget me/i.test(await known.locator('#panel').innerText()));
   await known.close();
 
   section('There is a way to your own page, and a way out');

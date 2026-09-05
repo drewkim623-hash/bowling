@@ -139,6 +139,10 @@ updates about a minute after you push.
 
 ## Using it
 
+**Signing out is not a cliff.** It hands the phone to the next person. You stay on the front
+door and tapping your name brings you straight back — with no password at all if you never made
+one. There is no button anywhere that locks you out of your own account.
+
 **Saying who you are.** The home page opens with **Who is bowling?** — every name the book
 knows, waiting to be tapped. What a tap does depends on what it would cost to be wrong about
 somebody:
@@ -218,6 +222,29 @@ third figure (`4–2–1` is four won, two lost, one level). Leave the box **emp
 not in that game at all. It only reads as sitting out if there is no number there. This matters
 most on a **three-way night**: 2v2v2 settled by placement pays the top side, takes off the
 bottom side, and leaves the middle on nothing — and the middle side bowled.
+
+**Power rankings** answer *who is winning*, off the book: where you finish, how much you take,
+how often you turn up. No scores needed, so guests are ranked like everybody else.
+
+Where you finish now leans on **how many were on your side**. The fewer people standing next to
+you, the less of the result was somebody else — so a game **one to a side counts four times**
+what a four-man game does, three to a side counts twice, and two to a side sits between them.
+Nothing is thrown away; the big-team games just do not shout as loudly. Two people with the
+same record can now be told apart: win your singles and lose your fours and you rank well above
+somebody who did the reverse.
+
+Finishing level scores in the middle, which is exactly what the middle side of a three-way
+night did.
+
+**Bowling rankings**, underneath, are the other question: not who wins, but who bowls best.
+Pins, spares, strikes, steadiness and form, no handicap anywhere near it. That one needs scores
+logged, so it only covers whoever logs them.
+
+**Sides split out.** The **Teams** tab has a strip along the top — **All · 1v1 · Pairs ·
+Threes · Fours** — indexed on how many were on *your side*, so 2v2 and 2v2v2 both count as
+Pairs. A size only appears once somebody has actually bowled it. Who you win with, the career
+record and recent games all follow the tab. **1v1** is everybody for themselves: a different
+number for every person, and it says outright that there are no partners to have.
 
 **Sides beyond two.** 3v3, 2v2v2, four ways, any of it. The sides are read off the numbers —
 same amount, same side — so the book works out three teams from a three-way game without being
