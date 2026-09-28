@@ -27,7 +27,10 @@ Four things to do. Twenty minutes, most of it waiting.
 > and the newest version adds the commissioner, the split tag, scoring by numbers instead of
 > pins, and the money book. Nothing you have logged is touched — old games are migrated in
 > place. If the site notices the database is behind, it says so on the Home tab and gives you
-> the exact SQL with a copy button.
+> the exact SQL with a copy button. If you would rather not re-run the whole thing,
+> `migrate-claim-approval.sql` on its own brings an existing database up to the commissioner
+> saying yes before anybody walks into a name with no password on it. Paste it in and run it
+> the same way; it is safe twice and touches nothing you have logged.
 
 ### 2. Build the tables
 
@@ -68,7 +71,9 @@ a confirmed email, so on a brand new database whoever gets there first gets the 
 commissioner can fix or delete anybody's games and any whole session, which is for
 the night somebody types 132 instead of 213 and then goes home. It is not a quiet power: every
 change a commissioner makes lands in the same visible history as everyone else's, with their
-name on it. Nobody can promote themselves; the database refuses it. Only that very first profile
+name on it. The commissioner is also who says yes or no when somebody taps a name with no
+password on it and says it is them — those wait on the Home tab. Nobody can promote
+themselves; the database refuses it. Only that very first profile
 is made commissioner automatically — if the group is ever left without one, nobody inherits the
 job by signing up next; you appoint one yourself. To appoint, hand the job over, or take it back,
 run one line in the SQL editor:
@@ -156,9 +161,13 @@ somebody:
 - **An account this phone has signed in before** goes straight in, no password. The phone
   keeps a small ring of everyone who has signed in on it, which is what you want for the phone
   that gets passed down the lane.
-- **An account that never made a password** — anyone who came in by typing a name — is walked
-  into the same way a guest is, from any device. There is nothing to type, so asking for a
-  password would only be a locked door with no key. It confirms first, and it says why.
+- **An account that never made a password** — anyone who came in by typing a name — has
+  nothing to type, so asking for a password would only be a locked door with no key. But that
+  also means anybody could tap it, so tapping it only *asks the commissioner*. They see who is
+  asking to be whom on their Home tab and approve it or turn it down. Nothing moves until they
+  approve; then everything under that name moves onto whoever asked, and the old name goes.
+  Until then, the person asking is signed in as themselves with an empty page and a card saying
+  they are waiting, with a way to take it back.
 - **Any account with an email on it** asks for the email and password. A name on a list is not
   a way in, and the database refuses to hand one of these over however it is asked.
 
