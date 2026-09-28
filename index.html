@@ -3281,7 +3281,7 @@ begin
           coalesce(nullif(trim(coalesce(new.raw_user_meta_data->>'display_name',
                                         split_part(coalesce(new.email, ''), '@', 1))), ''),
                    'Bowler'),
-          not exists (select 1 from profiles where is_admin))
+          not exists (select 1 from profiles))
   on conflict (id) do nothing;
   return new;
 end $BODY$;
