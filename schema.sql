@@ -204,7 +204,9 @@ create trigger games_edit_log before update or delete on games
 
 -- New sign-ups get a profile row automatically. The very first account to
 -- exist becomes the commissioner, because somebody has to be able to fix
--- things and there is nobody around yet to appoint them.
+-- things and there is nobody around yet to appoint them. Only the very first:
+-- a group that later finds itself with no commissioner appoints one from the
+-- SQL editor, rather than handing the keys to whoever signs up next.
 create or replace function handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
@@ -216,13 +218,14 @@ begin
           coalesce(nullif(trim(coalesce(new.raw_user_meta_data->>'display_name',
                                         split_part(coalesce(new.email, ''), '@', 1))), ''),
                    'Bowler'),
-          not exists (select 1 from profiles where is_admin))
+          not exists (select 1 from profiles))
   on conflict (id) do nothing;
   return new;
 end $$;
 
 -- Nobody promotes themselves. is_admin can only be changed by an existing
--- commissioner, or from the SQL editor, where auth.uid() is null.
+-- commissioner, or from the SQL editor, where auth.uid() is null. That holds
+-- for a new row as much as a changed one: see guard_admin_insert below.
 create or replace function guard_admin_flag() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
@@ -236,6 +239,26 @@ end $$;
 drop trigger if exists profiles_guard_admin on profiles;
 create trigger profiles_guard_admin before update on profiles
   for each row execute function guard_admin_flag();
+
+-- The same rule for a row being written fresh. Somebody whose profile row went
+-- away, but whose sign-in did not, could otherwise put it back with is_admin
+-- already true. Signed in, nobody arrives as commissioner unless there is no
+-- profile at all yet. It quietly writes false rather than refusing, like the
+-- guard above, because the page saves a profile with an upsert and this fires
+-- on those too.
+create or replace function guard_admin_insert() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.is_admin and auth.uid() is not null
+     and exists (select 1 from profiles) then
+    new.is_admin := false;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists profiles_guard_admin_insert on profiles;
+create trigger profiles_guard_admin_insert before insert on profiles
+  for each row execute function guard_admin_insert();
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users

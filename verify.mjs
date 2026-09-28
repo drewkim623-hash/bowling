@@ -1,12 +1,16 @@
 #!/usr/bin/env node
-/* Avengers Bowling — test harness. Node + Playwright, no framework.
+/* Avengers Bowling — test harness. Node + Playwright + PGlite, no framework.
  *
  *   node verify.mjs              run everything
  *   node verify.mjs --engine     scoring engine only (no browser needed)
+ *   node verify.mjs --db         engine and database only (no browser needed)
  *
  * The engine tests lift the <script id="engine"> block straight out of
- * index.html, so they test the code that actually ships.
+ * index.html, so they test the code that actually ships. The database tests
+ * load schema.sql into a real Postgres running in-process, so they test the
+ * SQL that actually ships.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -14,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ENGINE_ONLY = process.argv.includes('--engine');
+const DB_ONLY = process.argv.includes('--db');
 
 let pass = 0, fail = 0;
 const fails = [];
@@ -532,7 +537,8 @@ function rollsFromCounts(c){
 if (ENGINE_ONLY){
   report();
 } else {
-  await browserTests();
+  await dbTests();
+  if (!DB_ONLY) await browserTests();
   report();
 }
 
@@ -540,6 +546,174 @@ function report(){
   console.log(`\n\x1b[1m${fail === 0 ? '\x1b[32mALL CHECKS PASS' : '\x1b[31mFAILURES'}\x1b[0m  ${pass} passed, ${fail} failed`);
   if (fails.length){ console.log(fails.map(f => '  ✗ ' + f).join('\n')); process.exit(1); }
   process.exit(0);
+}
+/* --------------------------------------------------------------- database */
+/* Real Postgres, in-process, with just enough of Supabase faked around it for
+   schema.sql to load: the two API roles, auth.users, auth.uid(), and a storage
+   schema for the avatars bucket. The harness itself is the owner, which is
+   what the SQL editor is; `set local role authenticated` plus a jwt sub is
+   what a signed-in phone is, and row level security applies to it for real.
+   Supabase is never touched. */
+async function dbTests(){
+  // The engine loader left a fake `window` lying about, and PGlite takes that
+  // to mean it is in a browser. Hide it for the duration.
+  const win = globalThis.window;
+  delete globalThis.window;
+  try { await dbTestsInNode(); }
+  finally { globalThis.window = win; }
+}
+async function dbTestsInNode(){
+  const SUPABASE_STANDINS = `
+create role anon nologin;
+create role authenticated nologin;
+create schema auth;
+create table auth.users (
+  id uuid primary key, email text, phone text, raw_user_meta_data jsonb,
+  encrypted_password text, is_anonymous boolean default false,
+  created_at timestamptz default now());
+create function auth.uid() returns uuid language sql stable as $$
+  select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
+$$;
+create schema storage;
+create table storage.buckets (id text primary key, name text, public boolean);
+create table storage.objects (id uuid primary key default gen_random_uuid(),
+  bucket_id text, name text, owner uuid);
+alter table storage.objects enable row level security;
+create function storage.foldername(name text) returns text[] language sql immutable as $$
+  select string_to_array(name, '/')
+$$;
+grant usage on schema public, auth, storage to anon, authenticated;
+`;
+  // Supabase grants these by default; schema.sql relies on it.
+  const SUPABASE_GRANTS = `
+grant all privileges on all tables    in schema public to anon, authenticated;
+grant all privileges on all sequences in schema public to anon, authenticated;
+grant execute on all functions in schema public to anon, authenticated;
+`;
+  const ID = { a:'aaaaaaaa-0000-4000-8000-000000000001', b:'bbbbbbbb-0000-4000-8000-000000000002',
+               c:'cccccccc-0000-4000-8000-000000000003', d:'dddddddd-0000-4000-8000-000000000004' };
+
+  let PGlite, pgcrypto;
+  try {
+    ({ PGlite } = await import('@electric-sql/pglite'));
+    ({ pgcrypto } = await import('@electric-sql/pglite/contrib/pgcrypto'));
+  } catch {
+    console.error('\nPGlite is not installed. Run:  npm i -D @electric-sql/pglite');
+    process.exit(2);
+  }
+  const read = f => fs.readFileSync(path.join(DIR, f), 'utf8');
+  const schema = read('schema.sql');
+  const migration = read('migrate-admin-flag-insert.sql');
+
+  // A fresh database with the stand-ins in place and the given SQL loaded on
+  // top, in order. Returns null, with a failure recorded, if any of it refuses.
+  async function build(label, ...files){
+    const db = new PGlite({ extensions:{ pgcrypto } });
+    try {
+      await db.exec(SUPABASE_STANDINS);
+      for (const [i, sql] of files.entries()){
+        try { await db.exec(sql); }
+        catch (e){ ok(`${label}: file ${i + 1} of ${files.length} loads`, false, e.message); await db.close(); return null; }
+      }
+      await db.exec(SUPABASE_GRANTS);
+      return db;
+    } catch (e){ ok(`${label}: stand-ins load`, false, e.message); await db.close(); return null; }
+  }
+  const admin = async (db, id) =>
+    (await db.query('select is_admin from profiles where id = $1', [id])).rows[0]?.is_admin;
+  const signUp = (db, id, name) =>
+    db.query('insert into auth.users (id, email) values ($1, $2)', [id, `${name}@example.com`]);
+  // One statement as a signed-in phone. The settings are local, so they end
+  // with the transaction and the next statement is the owner again.
+  const as = (db, uid, sql) => db.transaction(async tx => {
+    await tx.exec(`set local role authenticated; set local request.jwt.claim.sub = '${uid}';`);
+    return (await tx.query(sql)).rows;
+  });
+  async function tryAs(name, db, uid, sql){
+    try { return await as(db, uid, sql); }
+    catch (e){ ok(name, false, e.message); return null; }
+  }
+
+  // Everything the fix promises, against whichever database it is handed.
+  async function scenario(db, p){
+    await signUp(db, ID.a, 'a');
+    eq(`${p}the very first sign-up is the commissioner`, await admin(db, ID.a), true);
+    await signUp(db, ID.b, 'b');
+    eq(`${p}the second sign-up is not`, await admin(db, ID.b), false);
+
+    await db.query('update profiles set is_admin = false where id = $1', [ID.a]);
+    await signUp(db, ID.c, 'c');
+    eq(`${p}with nobody in the job, the next sign-up still does not get it`, await admin(db, ID.c), false);
+
+    // The hole: B's profile row goes, B's sign-in does not.
+    await db.query('delete from profiles where id = $1', [ID.b]);
+    const ins = await tryAs(`${p}a signed-in person can put their own missing profile back`, db, ID.b,
+      `insert into profiles (id, display_name, is_admin) values ('${ID.b}', 'x', true)`);
+    ok(`${p}putting it back is allowed`, ins !== null);
+    eq(`${p}but it goes back without the commissioner flag`, await admin(db, ID.b), false);
+
+    await db.query('delete from profiles where id = $1', [ID.b]);
+    const upsertSql = `insert into profiles (id, display_name, is_admin) values ('${ID.b}', 'x', true)
+                       on conflict (id) do update set is_admin = excluded.is_admin`;
+    await tryAs(`${p}the upsert version runs`, db, ID.b, upsertSql);
+    eq(`${p}the upsert version, with no row there, cannot sneak it in`, await admin(db, ID.b), false);
+    await tryAs(`${p}the upsert version runs over an existing row`, db, ID.b, upsertSql);
+    eq(`${p}nor with the row already there`, await admin(db, ID.b), false);
+    await tryAs(`${p}an upsert that sets true outright runs`, db, ID.b,
+      `insert into profiles (id, display_name) values ('${ID.b}', 'x')
+       on conflict (id) do update set is_admin = true`);
+    eq(`${p}nor by setting true outright on conflict`, await admin(db, ID.b), false);
+
+    await tryAs(`${p}an update runs`, db, ID.b, `update profiles set is_admin = true where id = '${ID.b}'`);
+    eq(`${p}and the old way, an update, is still refused`, await admin(db, ID.b), false);
+
+    const boss = await tryAs(`${p}is_commissioner runs`, db, ID.b, 'select is_commissioner() as c');
+    eq(`${p}and the database does not think they are commissioner`, boss?.[0]?.c, false);
+
+    // The SQL editor keeps its keys.
+    await db.query('update profiles set is_admin = true where id = $1', [ID.a]);
+    eq(`${p}the SQL editor can still appoint one by update`, await admin(db, ID.a), true);
+    await signUp(db, ID.d, 'd');
+    await db.query('delete from profiles where id = $1', [ID.d]);
+    await db.query(`insert into profiles (id, display_name, is_admin) values ($1, 'd', true)`, [ID.d]);
+    eq(`${p}and by writing a row outright`, await admin(db, ID.d), true);
+    const aBoss = await tryAs(`${p}is_commissioner runs for the commissioner`, db, ID.a, 'select is_commissioner() as c');
+    eq(`${p}and the one it appointed is commissioner`, aBoss?.[0]?.c, true);
+  }
+
+  section('Nobody walks in as commissioner');
+  const fresh = await build('schema.sql + migration twice', schema, migration, migration);
+  if (fresh){ await scenario(fresh, ''); await fresh.close(); }
+
+  ok('the page\'s built-in catch-up SQL does not bring the old rule back',
+     !/not exists \(select 1 from profiles where is_admin\)/.test(read('index.html')));
+
+  section('The migration fixes a database built from the old schema');
+  // The last schema.sql before this fix. Pinned to a commit, not origin/main,
+  // so the check keeps meaning something after the fix is merged.
+  const PRE_FIX = '2fd894f';
+  let oldSchema = null;
+  try {
+    oldSchema = execFileSync('git', ['show', PRE_FIX + ':schema.sql'],
+      { cwd:DIR, encoding:'utf8', stdio:['ignore', 'pipe', 'ignore'] });
+  } catch {
+    console.log(`  (skipped: the pre-fix schema.sql at ${PRE_FIX} is not in this checkout)`);
+  }
+  if (oldSchema){
+    // First show the test would have caught it: the old schema lets B in.
+    const before = await build('old schema', oldSchema);
+    if (before){
+      await signUp(before, ID.a, 'a');
+      await signUp(before, ID.b, 'b');
+      await before.query('delete from profiles where id = $1', [ID.b]);
+      await tryAs('old schema: the exploit runs', before, ID.b,
+        `insert into profiles (id, display_name, is_admin) values ('${ID.b}', 'x', true)`);
+      eq('before the migration, the hole is really there', await admin(before, ID.b), true);
+      await before.close();
+    }
+    const after = await build('old schema + migration', oldSchema, migration, migration);
+    if (after){ await scenario(after, 'old schema + migration: '); await after.close(); }
+  }
 }
 /* ---------------------------------------------------------------- browser */
 /* A small league, built here in the harness out of hand-verified scorecards,

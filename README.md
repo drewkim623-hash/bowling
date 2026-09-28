@@ -68,8 +68,10 @@ a confirmed email, so on a brand new database whoever gets there first gets the 
 commissioner can fix or delete anybody's games and any whole session, which is for
 the night somebody types 132 instead of 213 and then goes home. It is not a quiet power: every
 change a commissioner makes lands in the same visible history as everyone else's, with their
-name on it. Nobody can promote themselves; the database refuses it. To hand the job over, or
-to take it back, run one line in the SQL editor:
+name on it. Nobody can promote themselves; the database refuses it. Only that very first profile
+is made commissioner automatically — if the group is ever left without one, nobody inherits the
+job by signing up next; you appoint one yourself. To appoint, hand the job over, or take it back,
+run one line in the SQL editor:
 
 ```sql
 update profiles set is_admin = true  where display_name = 'Nat';
