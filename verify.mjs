@@ -714,6 +714,247 @@ grant execute on all functions in schema public to anon, authenticated;
     const after = await build('old schema + migration', oldSchema, migration, migration);
     if (after){ await scenario(after, 'old schema + migration: '); await after.close(); }
   }
+
+  /* ---- asking to be somebody ------------------------------------------
+     A name with no password on it used to be walked into on the spot, by
+     anybody. Now it is only asked for, and the commissioner says yes or no. */
+  const approval = read('migrate-claim-approval.sql');
+  const claimAccount = read('migrate-claim-account.sql');
+  const U = n => `eeeeeeee-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  // Somebody who walked in with nothing but a name: no email, no phone.
+  const signUpNoEmail = (db, id, name) =>
+    db.query(`insert into auth.users (id, email, raw_user_meta_data, is_anonymous)
+              values ($1, null, jsonb_build_object('display_name', $2::text), true)`, [id, name]);
+  const asAnon = (db, sql) => db.transaction(async tx => {
+    await tx.exec(`set local role anon; set local request.jwt.claim.sub = '';`);
+    return (await tx.query(sql)).rows;
+  });
+  async function refuses(name, db, uid, sql){
+    try { await (uid ? as(db, uid, sql) : asAnon(db, sql)); ok(name, false, 'it went through'); }
+    catch { ok(name, true); }
+  }
+  const one = async (db, sql, args = []) => Object.values((await db.query(sql, args)).rows[0] || {})[0];
+  const n = async (db, sql, args = []) => Number(await one(db, sql, args));
+
+  async function claimScenario(db, p){
+    const A = ID.a, T = U(1), R = U(2), X = U(3), R2 = U(4), T2 = U(5);
+    const S1 = U(100), G1 = U(101), G2 = U(102), G3 = U(103), M1 = U(104), M2 = U(105);
+    await signUp(db, A, 'a');
+    eq(`${p}the first sign-up is the commissioner`, await admin(db, A), true);
+    await signUpNoEmail(db, T, 'Tee');
+    await signUpNoEmail(db, R, 'Tee');           // the phone that says it is Tee
+    await signUp(db, X, 'x');
+    await signUpNoEmail(db, R2, 'Also Tee');
+    await signUpNoEmail(db, T2, 'Somebody');
+    eq(`${p}a name with no email has no login`,
+       await one(db, 'select has_login from profiles where id = $1', [T]), false);
+    eq(`${p}a name with an email has one`,
+       await one(db, 'select has_login from profiles where id = $1', [X]), true);
+
+    // Tee's history: a night Tee started, two games of Tee's, one Tee logged
+    // for X, money Tee is on and money Tee wrote, a guest Tee added, an edit.
+    await tryAs(`${p}Tee starts a night`, db, T,
+      `insert into sessions (id, played_on, house, created_by) values ('${S1}', '2026-01-01', 'Lanes', '${T}')`);
+    await tryAs(`${p}Tee is on it`, db, T,
+      `insert into session_players (session_id, profile_id, team) values ('${S1}', '${T}', 'A')`);
+    await tryAs(`${p}Tee logs games`, db, T,
+      `insert into games (id, session_id, profile_id, game_no, total_score, entry_mode, logged_by) values
+         ('${G1}', '${S1}', '${T}', 1, 150, 'quick', '${T}'),
+         ('${G2}', '${S1}', '${T}', 2, 170, 'quick', '${T}'),
+         ('${G3}', '${S1}', '${X}', 1, 120, 'quick', '${T}')`);
+    await tryAs(`${p}Tee settles up`, db, T,
+      `insert into money (id, session_id, game_no, profile_id, amount_cents, created_by) values
+         ('${M1}', '${S1}', 1, '${T}',  500, '${T}'),
+         ('${M2}', '${S1}', 1, '${X}', -500, '${T}')`);
+    await tryAs(`${p}Tee adds a guest`, db, T,
+      `insert into guests (name, created_by) values ('Mike', '${T}')`);
+    await tryAs(`${p}Tee fixes a score`, db, T, `update games set total_score = 160 where id = '${G1}'`);
+    eq(`${p}and that fix is in the history under Tee`,
+       await n(db, 'select count(*) from edits where editor_id = $1', [T]), 1);
+    const gamesBefore = await n(db, 'select count(*) from games');
+    const moneyBefore = await n(db, 'select count(*) from money');
+    const untouched = async label => {
+      eq(`${p}${label}: Tee still has both games`, await n(db, 'select count(*) from games where profile_id = $1', [T]), 2);
+      eq(`${p}${label}: Tee still has the money`, await n(db, 'select count(*) from money where profile_id = $1', [T]), 1);
+      eq(`${p}${label}: Tee still started the night`, await n(db, 'select count(*) from sessions where created_by = $1', [T]), 1);
+      eq(`${p}${label}: Tee is still there`, await n(db, 'select count(*) from profiles where id = $1', [T]), 1);
+    };
+
+    // Asking.
+    const ask = async (who, target) => (await as(db, who, `select request_claim('${target}') as id`))[0].id;
+    let req = null;
+    try { req = await ask(R, T); } catch (e){ ok(`${p}asking runs`, false, e.message); return; }
+    ok(`${p}asking hands back a request`, !!req);
+    eq(`${p}which is written down as waiting`,
+       await n(db, `select count(*) from claim_requests where id = $1 and status = 'pending'
+                     and requester_id = $2 and target_id = $3 and target_name = 'Tee'`, [req, R, T]), 1);
+    await untouched('after asking, nothing has moved');
+
+    eq(`${p}asking again is the same request`, await ask(R, T), req);
+    eq(`${p}and there is still only one waiting`,
+       await n(db, `select count(*) from claim_requests where requester_id = $1 and status = 'pending'`, [R]), 1);
+    const other = await ask(R, T2);
+    ok(`${p}asking to be somebody else is a new request`, other && other !== req);
+    eq(`${p}and it withdraws the first`,
+       await one(db, 'select status from claim_requests where id = $1', [req]), 'cancelled');
+    eq(`${p}withdrawn by the asker`,
+       await one(db, 'select decided_by from claim_requests where id = $1', [req]), R);
+    req = await ask(R, T);
+    eq(`${p}and asking for Tee again withdraws that one`,
+       await one(db, 'select status from claim_requests where id = $1', [other]), 'cancelled');
+    eq(`${p}still only one waiting`,
+       await n(db, `select count(*) from claim_requests where requester_id = $1 and status = 'pending'`, [R]), 1);
+
+    await refuses(`${p}nobody asks to be the commissioner`, db, R, `select request_claim('${A}')`);
+    await refuses(`${p}nobody asks to be an account with an email`, db, R, `select request_claim('${X}')`);
+    await refuses(`${p}nobody asks to be themselves`, db, R, `select request_claim('${R}')`);
+    await refuses(`${p}nobody signed in cannot ask at all`, db, null, `select request_claim('${T}')`);
+    await refuses(`${p}nobody asks for a name that is not there`, db, R, `select request_claim('${U(999)}')`);
+
+    // Nobody writes to the table directly, not even the commissioner.
+    await refuses(`${p}a request cannot be written straight in`, db, R,
+      `insert into claim_requests (target_id, target_name, requester_id, status)
+       values ('${T}', 'Tee', '${R}', 'approved')`);
+    await refuses(`${p}not even by the commissioner`, db, A,
+      `insert into claim_requests (target_id, target_name, requester_id) values ('${T}', 'Tee', '${A}')`);
+    await as(db, R, `update claim_requests set status = 'approved' where id = '${req}'`).catch(() => {});
+    await as(db, A, `update claim_requests set status = 'approved' where id = '${req}'`).catch(() => {});
+    eq(`${p}nor approved by editing the row`,
+       await one(db, 'select status from claim_requests where id = $1', [req]), 'pending');
+    await as(db, R, `delete from claim_requests where id = '${req}'`).catch(() => {});
+    eq(`${p}nor deleted`, await n(db, 'select count(*) from claim_requests where id = $1', [req]), 1);
+
+    // Only the commissioner answers.
+    await refuses(`${p}an ordinary account cannot approve`, db, X, `select approve_claim('${req}')`);
+    await refuses(`${p}the asker cannot approve their own`, db, R, `select approve_claim('${req}')`);
+    await refuses(`${p}an ordinary account cannot deny`, db, X, `select deny_claim('${req}')`);
+    await refuses(`${p}the asker cannot deny either`, db, R, `select deny_claim('${req}')`);
+    await refuses(`${p}somebody else cannot withdraw it`, db, X, `select cancel_claim('${req}')`);
+    await refuses(`${p}nobody signed in cannot approve`, db, null, `select approve_claim('${req}')`);
+    eq(`${p}so it is still waiting`, await one(db, 'select status from claim_requests where id = $1', [req]), 'pending');
+    await untouched('after all that');
+
+    // A second asker withdraws, then asks again.
+    const r2a = await ask(R2, T);
+    await tryAs(`${p}the asker can withdraw their own`, db, R2, `select cancel_claim('${r2a}')`);
+    eq(`${p}which marks it withdrawn`, await one(db, 'select status from claim_requests where id = $1', [r2a]), 'cancelled');
+    await refuses(`${p}and a withdrawn request cannot then be approved`, db, A, `select approve_claim('${r2a}')`);
+    await refuses(`${p}or withdrawn twice`, db, R2, `select cancel_claim('${r2a}')`);
+    const r2b = await ask(R2, T);
+
+    // Yes.
+    await tryAs(`${p}the commissioner approves`, db, A, `select approve_claim('${req}')`);
+    eq(`${p}Tee's games are the asker's now`, await n(db, 'select count(*) from games where profile_id = $1', [R]), 2);
+    eq(`${p}and none are left under Tee`, await n(db, 'select count(*) from games where profile_id = $1 or logged_by = $1', [T]), 0);
+    eq(`${p}the game Tee logged for somebody else says the asker logged it`,
+       await one(db, 'select logged_by from games where id = $1', [G3]), R);
+    eq(`${p}the money moved`, await n(db, 'select count(*) from money where profile_id = $1', [R]), 1);
+    eq(`${p}and so did who wrote it`, await n(db, 'select count(*) from money where created_by = $1', [R]), 2);
+    eq(`${p}the seat on the night moved`, await n(db, 'select count(*) from session_players where profile_id = $1', [R]), 1);
+    eq(`${p}the night they started moved`, await one(db, 'select created_by from sessions where id = $1', [S1]), R);
+    eq(`${p}the guest they added moved`, await one(db, `select created_by from guests where name = 'Mike'`), R);
+    eq(`${p}the edit is still credited, to the asker`, await n(db, 'select count(*) from edits where editor_id = $1', [R]), 1);
+    ok(`${p}and what the edit recorded is untouched`,
+       await n(db, `select count(*) from edits where before->>'profile_id' = $1`, [T]) >= 1);
+    eq(`${p}no games were lost`, await n(db, 'select count(*) from games'), gamesBefore);
+    eq(`${p}no money was lost`, await n(db, 'select count(*) from money'), moneyBefore);
+    eq(`${p}the asker is called Tee`, await one(db, 'select display_name from profiles where id = $1', [R]), 'Tee');
+    eq(`${p}Tee's old profile is gone`, await n(db, 'select count(*) from profiles where id = $1', [T]), 0);
+    eq(`${p}and so is the sign-in under it`, await n(db, 'select count(*) from auth.users where id = $1', [T]), 0);
+    const done = (await db.query('select * from claim_requests where id = $1', [req])).rows[0];
+    eq(`${p}the request says approved`, done?.status, 'approved');
+    eq(`${p}by the commissioner`, done?.decided_by, A);
+    ok(`${p}with a time on it`, !!done?.decided_at);
+    eq(`${p}still reading Tee after the target has gone`, done?.target_name, 'Tee');
+    const lost = (await db.query('select * from claim_requests where id = $1', [r2b])).rows[0];
+    eq(`${p}the other asker for Tee was turned down`, lost?.status, 'denied');
+    eq(`${p}by the commissioner too`, lost?.decided_by, A);
+    await refuses(`${p}approving twice does nothing more`, db, A, `select approve_claim('${req}')`);
+
+    // The name picked up an email between the asking and the answer.
+    const T3 = U(6), R3 = U(7), G4 = U(106);
+    await signUpNoEmail(db, T3, 'Three');
+    await signUpNoEmail(db, R3, 'Three');
+    await tryAs(`${p}Three logs a game`, db, T3,
+      `insert into games (id, session_id, profile_id, game_no, total_score, entry_mode, logged_by)
+       values ('${G4}', '${S1}', '${T3}', 1, 111, 'quick', '${T3}')`);
+    const r3 = await ask(R3, T3);
+    await db.query(`update auth.users set email = 'three@example.com' where id = $1`, [T3]);
+    eq(`${p}an email arriving flips has_login`, await one(db, 'select has_login from profiles where id = $1', [T3]), true);
+    await refuses(`${p}and then the commissioner cannot hand it over`, db, A, `select approve_claim('${r3}')`);
+    eq(`${p}its game stays put`, await one(db, 'select profile_id from games where id = $1', [G4]), T3);
+    eq(`${p}and it is still there`, await n(db, 'select count(*) from profiles where id = $1', [T3]), 1);
+    eq(`${p}and the request is still waiting`, await one(db, 'select status from claim_requests where id = $1', [r3]), 'pending');
+
+    // The name became commissioner in the meantime.
+    const T4 = U(8), R4 = U(9);
+    await signUpNoEmail(db, T4, 'Four');
+    await signUpNoEmail(db, R4, 'Four');
+    const r4 = await ask(R4, T4);
+    await db.query('update profiles set is_admin = true where id = $1', [T4]);
+    await refuses(`${p}a name made commissioner cannot be handed over`, db, A, `select approve_claim('${r4}')`);
+    eq(`${p}it is still there`, await n(db, 'select count(*) from profiles where id = $1', [T4]), 1);
+    await refuses(`${p}nor asked for now`, db, R3, `select request_claim('${T4}')`);
+
+    // No.
+    const T5 = U(10), R5 = U(11);
+    await signUpNoEmail(db, T5, 'Five');
+    await signUpNoEmail(db, R5, 'Five');
+    const r5 = await ask(R5, T5);
+    await tryAs(`${p}the commissioner can say no`, db, A, `select deny_claim('${r5}')`);
+    const no = (await db.query('select * from claim_requests where id = $1', [r5])).rows[0];
+    eq(`${p}which marks it denied`, no?.status, 'denied');
+    eq(`${p}by the commissioner`, no?.decided_by, A);
+    eq(`${p}and moves nothing`, await n(db, 'select count(*) from profiles where id = $1', [T5]), 1);
+    await refuses(`${p}a no cannot be turned into a yes`, db, A, `select approve_claim('${r5}')`);
+    await refuses(`${p}nor taken back by the asker`, db, R5, `select cancel_claim('${r5}')`);
+    await refuses(`${p}nor said twice`, db, A, `select deny_claim('${r5}')`);
+
+    // The commissioner is allowed to be the one asking.
+    const T6 = U(12);
+    await signUpNoEmail(db, T6, 'Six');
+    const r6 = await ask(A, T6);
+    await tryAs(`${p}the commissioner can approve their own`, db, A, `select approve_claim('${r6}')`);
+    eq(`${p}and it goes through`, await one(db, 'select status from claim_requests where id = $1', [r6]), 'approved');
+    eq(`${p}Six is folded into them`, await n(db, 'select count(*) from profiles where id = $1', [T6]), 0);
+
+    eq(`${p}the instant takeover is gone`,
+       await n(db, `select count(*) from pg_proc where proname = 'claim_profile'`), 0);
+    await refuses(`${p}and calling it fails`, db, R3, `select claim_profile('${T5}')`);
+  }
+
+  section('Being somebody takes the commissioner\'s say-so');
+  const cFresh = await build('schema.sql alone', schema);
+  if (cFresh){ await claimScenario(cFresh, 'schema.sql: '); await cFresh.close(); }
+  const cTwice = await build('schema.sql + approval twice', schema, approval, approval);
+  if (cTwice){ await claimScenario(cTwice, 'schema + migration twice: '); await cTwice.close(); }
+
+  if (oldSchema){
+    // The hole was real: on the old schema with the walk-back-in migration,
+    // anybody could take a name and everything under it, with nobody asked.
+    const hole = await build('old schema + claim-account', oldSchema, claimAccount);
+    if (hole){
+      const T = U(1), R = U(2), S1 = U(100);
+      await signUp(hole, ID.a, 'a');
+      await signUpNoEmail(hole, T, 'Tee');
+      await signUpNoEmail(hole, R, 'Tee');
+      await tryAs('old: Tee starts a night', hole, T,
+        `insert into sessions (id, played_on, house, created_by) values ('${S1}', '2026-01-01', 'Lanes', '${T}')`);
+      await tryAs('old: Tee logs a game', hole, T,
+        `insert into games (session_id, profile_id, game_no, total_score, entry_mode, logged_by)
+         values ('${S1}', '${T}', 1, 150, 'quick', '${T}')`);
+      await tryAs('old: a stranger calls claim_profile', hole, R, `select claim_profile('${T}')`);
+      eq('before the migration, a stranger took Tee\'s games on the spot',
+         await n(hole, 'select count(*) from games where profile_id = $1', [R]), 1);
+      await hole.close();
+    }
+    const cOld = await build('old schema + claim-account + admin flag + approval twice',
+      oldSchema, claimAccount, migration, approval, approval);
+    if (cOld){ await claimScenario(cOld, 'old + every migration: '); await cOld.close(); }
+    const cSkip = await build('old schema + admin flag + approval twice (never ran claim-account)',
+      oldSchema, migration, approval, approval);
+    if (cSkip){ await claimScenario(cSkip, 'old, skipping claim-account: '); await cSkip.close(); }
+  }
 }
 /* ---------------------------------------------------------------- browser */
 /* A small league, built here in the harness out of hand-verified scorecards,
@@ -2042,23 +2283,179 @@ async function browserTests(){
      /never put a password/i.test(nbSheet), nbSheet.slice(0, 300));
   ok('and what is being taken on', /80/.test(nbSheet), nbSheet.slice(0, 300));
 
+  ok('and that the commissioner has to OK it', /commissioner/i.test(nbSheet), nbSheet.slice(0, 300));
+
+  /* Anybody on the internet could tap that name. So tapping it only asks. */
+  nb.on('dialog', d => d.accept());
   await nb.locator('.sheet button', { hasText:/Yes, I/ }).first().click();
   await nb.waitForTimeout(400);
-  ok('confirming walks you back in with no password anywhere',
+  ok('confirming signs you in with no password anywhere',
      await nb.evaluate(() => !!window.APP.state.user));
-  ok('under their name', await nb.evaluate(() =>
-     window.APP.state.profiles.find(p => p.id === window.APP.state.user.id)?.display_name === 'ac'));
-  ok('holding their money', await nb.evaluate(() => {
-    const me = window.APP.state.user.id;
-    return window.APP.state.money.some(m => m.profile_id === me && m.amount_cents === 8000);
-  }));
-  ok('and the empty profile is gone rather than doubled up',
-     await nb.evaluate(() => window.APP.state.profiles.filter(p => p.display_name === 'ac').length === 1));
-
+  const asker = await nb.evaluate(() => window.APP.state.user?.id);
+  ok('as somebody new, not as ac', !!asker && asker !== 'ac');
+  const acStill = () => nb.evaluate(me =>
+    window.APP.state.money.some(m => m.profile_id === 'ac' && m.amount_cents === 8000)
+    && !window.APP.state.money.some(m => m.profile_id === me && m.amount_cents === 8000), asker);
+  ok('it asks the commissioner rather than taking anything', await nb.evaluate(me =>
+     window.APP.state.claims.some(c => c.requester_id === me && c.target_id === 'ac' && c.status === 'pending'), asker));
+  ok('so the money has not moved', await acStill());
+  ok('and ac is still there, untouched', await nb.evaluate(() =>
+     window.APP.state.profiles.some(p => p.id === 'ac' && p.display_name === 'ac')));
+  const waitTxt = await nb.locator('#panel').innerText();
+  ok('the page says it is waiting on the commissioner', /waiting on the commissioner/i.test(waitTxt), waitTxt.slice(0, 300));
+  ok('and who it asked to be', /you asked to be ac/i.test(waitTxt));
   ok('and nobody else on the door became walk-in-able',
      !/no password/i.test(await nb.locator('#panel').innerText())
      || await nb.evaluate(() => !window.APP.state.user));
+
+  await nb.locator('button', { hasText:'Never mind' }).first().click();
+  await nb.waitForTimeout(300);
+  ok('never mind takes it back', await nb.evaluate(me =>
+     window.APP.state.claims.some(c => c.requester_id === me && c.target_id === 'ac' && c.status === 'cancelled')
+     && !window.APP.state.claims.some(c => c.status === 'pending'), asker));
+  ok('and the waiting card goes', !/waiting on the commissioner/i.test(await nb.locator('#panel').innerText()));
+  ok('and still nothing moved', await acStill());
+
+  /* Asking again for the same name from the same phone is the same person,
+     not another empty account. */
+  await goTo(nb, 'me');
+  await nb.locator('button', { hasText:/^Sign out$/ }).first().click();
+  await nb.waitForTimeout(400);
+  await nb.locator('.person.tap', { hasText:'no password' }).first().click();
+  await nb.waitForTimeout(250);
+  await nb.locator('.sheet button', { hasText:/Yes, I/ }).first().click();
+  await nb.waitForTimeout(400);
+  ok('asking again from the same phone comes back as the same person',
+     await nb.evaluate(me => window.APP.state.user?.id === me, asker));
+  ok('asking again', await nb.evaluate(me =>
+     window.APP.state.claims.filter(c => c.requester_id === me && c.status === 'pending').length === 1, asker));
   await nb.close();
+
+  /* ---- the commissioner's side ---- */
+  const clFx = JSON.parse(JSON.stringify(nbFx));
+  const blank = { handle:null, avatar_url:null, hand:null, ball_weight:null, is_admin:false,
+                  has_login:false, home_house:null, joined_at:'2026-09-01T00:00:00Z' };
+  clFx.profiles.push({ ...blank, id:'asker', display_name:'ac' }, { ...blank, id:'loki', display_name:'Loki' });
+  const hourAgo = new Date(Date.now() - 3600e3).toISOString();
+  clFx.claims = [
+    { id:'c1', target_id:'ac', target_name:'ac', requester_id:'asker', status:'pending',
+      requested_at:hourAgo, decided_by:null, decided_at:null },
+    { id:'c2', target_id:'ac', target_name:'ac', requester_id:'loki', status:'pending',
+      requested_at:hourAgo, decided_by:null, decided_at:null },
+  ];
+
+  section('The commissioner says who somebody is');
+  const boss = await ctx.newPage();
+  boss.on('dialog', d => d.accept());
+  await boss.addInitScript(([fx, user]) => { window.__FIXTURE = fx; window.__STUB_USER = user; },
+                           [clFx, { id:'me', email:'drew@example.com' }]);
+  await boss.goto(base + '?stub=1');
+  await boss.waitForSelector('body[data-ready="1"]');
+  const askTxt = await boss.locator('.card.asking').innerText().catch(() => '');
+  ok('the commissioner sees who is asking to be somebody', /asking to be somebody/i.test(askTxt), askTxt.slice(0, 200));
+  ok('with both names on it', /Somebody new .*wants to be ac/.test(askTxt) && /Loki .*wants to be ac/.test(askTxt), askTxt.slice(0, 200));
+  ok('an asker under the very name they asked for is called somebody new, not "ac wants to be ac"',
+     !/\bac\b[^\n]*wants to be ac/.test(askTxt.replace(/Somebody new[^\n]*/g, '')), askTxt.slice(0, 200));
+  ok('and says how new they are', /Somebody new \(joined [^)]+\) wants to be ac/.test(askTxt)
+     && /Loki \(joined [^)]+\) wants to be ac/.test(askTxt), askTxt.slice(0, 200));
+  ok('and says to check in person', /check with them in person/i.test(askTxt));
+  ok('and a yes and a no for each',
+     await boss.locator('.card.asking button', { hasText:'Approve' }).count() === 2
+     && await boss.locator('.card.asking button', { hasText:'Deny' }).count() === 2);
+
+  await boss.locator('.card.asking .spread', { hasText:'Loki' }).locator('button', { hasText:'Deny' }).click();
+  await boss.waitForTimeout(300);
+  ok('saying no marks it denied', await boss.evaluate(() =>
+     window.APP.state.claims.some(c => c.id === 'c2' && c.status === 'denied' && c.decided_by === 'me')));
+  ok('and moves nothing', await boss.evaluate(() =>
+     window.APP.state.money.some(m => m.profile_id === 'ac' && m.amount_cents === 8000)
+     && window.APP.state.profiles.some(p => p.id === 'ac')));
+  ok('and that one leaves the list', !/Loki .*wants to be/.test(await boss.locator('#panel').innerText()));
+
+  const confirms = [];
+  boss.on('dialog', d => confirms.push(d.message()));
+  await boss.locator('.card.asking .spread', { hasText:'Somebody new' }).locator('button', { hasText:'Approve' }).click();
+  await boss.waitForTimeout(300);
+  ok('the yes is asked about under the same label', /^Make Somebody new \(joined [^)]+\) into ac\?/.test(confirms[0] || ''),
+     confirms[0]);
+  ok('saying yes moves the money onto whoever asked', await boss.evaluate(() =>
+     window.APP.state.money.some(m => m.profile_id === 'asker' && m.amount_cents === 8000)
+     && !window.APP.state.money.some(m => m.profile_id === 'ac')));
+  ok('they take the name', await boss.evaluate(() =>
+     window.APP.state.profiles.find(p => p.id === 'asker')?.display_name === 'ac'));
+  ok('and the old ac is gone rather than doubled up', await boss.evaluate(() =>
+     !window.APP.state.profiles.some(p => p.id === 'ac')
+     && window.APP.state.profiles.filter(p => p.display_name === 'ac').length === 1));
+  ok('the request says approved, by the commissioner', await boss.evaluate(() =>
+     window.APP.state.claims.some(c => c.id === 'c1' && c.status === 'approved' && c.decided_by === 'me')));
+  ok('and the card is gone once nobody is waiting', await boss.locator('.card.asking').count() === 0);
+  await boss.close();
+
+  section('A page that went out before the SQL did');
+  const early = await ctx.newPage();
+  await early.addInitScript(fx => { window.__FIXTURE = fx; }, nbFx);
+  await early.goto(base + '?stub=1');
+  await early.waitForSelector('body[data-ready="1"]');
+  await early.evaluate(() => { window.APP.state.claimsReady = false; });
+  const peopleBefore = await early.evaluate(() => window.APP.state.profiles.length);
+  const ringBefore = await early.evaluate(() => localStorage.getItem('bowl.device'));
+  await early.locator('.person.tap', { hasText:'no password' }).first().click();
+  await early.waitForTimeout(250);
+  await early.locator('.sheet button', { hasText:/Yes, I/ }).first().click();
+  await early.waitForTimeout(400);
+  ok('with nowhere to ask, nobody gets signed in', await early.evaluate(() => !window.APP.state.user));
+  ok('and no empty account is made', await early.evaluate(() => window.APP.state.profiles.length) === peopleBefore
+     && await early.evaluate(() => localStorage.getItem('bowl.device')) === ringBefore);
+  ok('it says the database is not ready for it',
+     /has not been set up for that yet.*migrate-claim-approval\.sql/i.test(await early.locator('.sheet').innerText().catch(() => '')));
+  await early.close();
+
+  section('Nobody else gets a say');
+  const nat = await ctx.newPage();
+  await nat.addInitScript(([fx, user]) => { window.__FIXTURE = fx; window.__STUB_USER = user; },
+                          [clFx, { id:'nat', email:'nat@example.com' }]);
+  await nat.goto(base + '?stub=1');
+  await nat.waitForSelector('body[data-ready="1"]');
+  const natTxt = await nat.locator('#panel').innerText();
+  ok('somebody who is not the commissioner sees nobody asking', !/asking to be somebody/i.test(natTxt));
+  ok('and no button to approve anything',
+     await nat.locator('button', { hasText:/^Approve$/ }).count() === 0
+     && await nat.locator('button', { hasText:/^Deny$/ }).count() === 0);
+  await nat.close();
+
+  section('A no is said once');
+  const noFx = JSON.parse(JSON.stringify(clFx));
+  noFx.claims = [{ id:'c3', target_id:'ac', target_name:'ac', requester_id:'asker', status:'denied',
+                   requested_at:hourAgo, decided_by:'me', decided_at:hourAgo }];
+  const told = await ctx.newPage();
+  await told.addInitScript(([fx, user]) => { window.__FIXTURE = fx; window.__STUB_USER = user; },
+                           [noFx, { id:'asker', is_anonymous:true }]);
+  await told.goto(base + '?stub=1');
+  await told.waitForSelector('body[data-ready="1"]');
+  const toldTxt = await told.locator('#panel').innerText();
+  ok('whoever asked is told the commissioner said no', /commissioner said no to you being ac/i.test(toldTxt), toldTxt.slice(0, 300));
+  ok('and is not left thinking they are still waiting', !/waiting on the commissioner/i.test(toldTxt));
+  await told.reload();
+  await told.waitForSelector('body[data-ready="1"]');
+  ok('and is not told again after that',
+     !/said no to you/i.test(await told.locator('#panel').innerText()));
+  await told.close();
+
+  section('The front door does not show a name twice');
+  const twice = await ctx.newPage();
+  await twice.addInitScript(fx => { window.__FIXTURE = fx; }, clFx);
+  await twice.goto(base + '?stub=1');
+  await twice.waitForSelector('body[data-ready="1"]');
+  /* only the chooser: the book further down has its own rows of people */
+  const faces = (await twice.locator('.card', { has: twice.locator('h2', { hasText:'Who is bowling?' }) })
+    .locator('.person.tap').allInnerTexts()).map(t => t.split('\n').map(s => s.trim()));
+  eq('somebody waiting on the commissioner is left off other phones',
+     faces.filter(l => l.includes('ac')).length, 1);
+  ok('and so is anybody else waiting', faces.length > 0 && !faces.some(l => l.includes('Loki')));
+  ok('the name they asked for keeps its face, and says somebody asked',
+     faces.some(l => l.includes('ac') && /waiting on the commissioner/i.test(l.join(' '))),
+     faces.map(l => l.join(' ')).join(' | ').slice(0, 300));
+  await twice.close();
 
   section('A newcomer needs nothing but a name');
   const fresh = await ctx.newPage();

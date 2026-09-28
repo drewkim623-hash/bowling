@@ -1322,6 +1322,9 @@ const state = {
   ready:false, error:null, staleSchema:false, mode: STUB ? 'stub' : 'live',
   user:null, me:null,
   profiles:[], sessions:[], players:[], games:[], rolls:[], edits:[], money:[], guests:[],
+  /* Somebody asking to be a name that never had a password. claimsReady is
+     false on a database that has not run migrate-claim-approval.sql yet. */
+  claims:[], claimsReady:true,
 };
 
 function seededRandom(seed){
@@ -1469,7 +1472,15 @@ function stubDB(){
   const seed = window.__FIXTURE || (DEMO ? demoFixture() : { profiles:[], sessions:[], players:[], games:[], rolls:[], edits:[], money:[], guests:[] });
   let user = window.__STUB_USER || null;
   const D = JSON.parse(JSON.stringify(seed));
-  D.money = D.money || []; D.guests = D.guests || [];
+  D.money = D.money || []; D.guests = D.guests || []; D.claims = D.claims || [];
+  /* The same rules claim_requests is held to in the database. */
+  const bossHere = () => !!D.profiles.find(p => p.id === user?.id)?.is_admin;
+  const settle = (c, status) => Object.assign(c, { status, decided_by: user.id, decided_at: new Date().toISOString() });
+  function walkable(t){
+    if (!t) throw new Error('there is nobody by that name any more');
+    if (!('has_login' in t) || t.has_login) throw new Error('that account has a way of its own to sign in');
+    if (t.is_admin) throw new Error('the commissioner cannot be walked into');
+  }
   return {
     kind:'stub',
     async init(){ return user; },
@@ -1488,27 +1499,78 @@ function stubDB(){
       D.profiles.push({ id, display_name: name || 'Bowler', handle:null,
                         joined_at:new Date().toISOString() });
       rememberOnDevice(id, { access_token:'stub', refresh_token:'stub' }, name);
-      return {};
+      return { id };
     },
-    /* Mirrors claim_profile: everything pointing at the old name points at
-       you now, and the empty profile goes. */
-    async claimProfile(id){
+    /* Mirrors request_claim: it checks, then only writes it down. */
+    async requestClaim(target){
+      if (!user) throw new Error('nobody is signed in');
+      const t = D.profiles.find(p => p.id === target);
+      if (!t) throw new Error('there is nobody by that name any more');
+      if (target === user.id) throw new Error('you are already you');
+      walkable(t);
+      const same = D.claims.find(c => c.requester_id === user.id && c.target_id === target && c.status === 'pending');
+      if (same) return same.id;
+      for (const c of D.claims) if (c.requester_id === user.id && c.status === 'pending') settle(c, 'cancelled');
+      const row = { id: uid(), target_id: target, target_name: t.display_name, requester_id: user.id,
+                    status:'pending', requested_at: new Date().toISOString(), decided_by:null, decided_at:null };
+      D.claims.push(row);
+      return row.id;
+    },
+    /* Mirrors approve_claim: everything pointing at the old name points at
+       whoever asked, and the empty profile goes. */
+    async approveClaim(cid){
+      if (!user) throw new Error('nobody is signed in');
+      if (!bossHere()) throw new Error('only the commissioner can say yes to that');
+      const c = D.claims.find(x => x.id === cid);
+      if (!c) throw new Error('there is no such request');
+      if (c.status !== 'pending') throw new Error('that has already been ' + c.status);
+      const id = c.target_id, to = c.requester_id;
       const old = D.profiles.find(p => p.id === id);
-      if (!old) throw new Error('there is nobody by that name any more');
-      if (old.has_login) throw new Error('that account has a way of its own to sign in');
+      walkable(old);
+      const mine = D.profiles.find(p => p.id === to);
+      if (!mine) throw new Error('whoever asked is not here any more');
+      if (id === to) throw new Error('they are already themselves');
+      /* where the two would end up on the same row twice, the old one gives way */
+      const has = (rows, key) => new Set(rows.filter(r => r.profile_id === to).map(key));
+      const gHave = has(D.games, g => g.session_id + '|' + g.game_no);
+      D.games = D.games.filter(g => !(g.profile_id === id && gHave.has(g.session_id + '|' + g.game_no)));
+      const pHave = has(D.players, x => x.session_id);
+      D.players = D.players.filter(x => !(x.profile_id === id && pHave.has(x.session_id)));
+      const mHave = has(D.money.filter(m => m.game_no != null), m => m.session_id + '|' + m.game_no);
+      D.money = D.money.filter(m => !(m.profile_id === id && m.game_no != null && mHave.has(m.session_id + '|' + m.game_no)));
       for (const g of D.games){
-        if (g.profile_id === id) g.profile_id = user.id;
-        if (g.logged_by === id) g.logged_by = user.id;
+        if (g.profile_id === id) g.profile_id = to;
+        if (g.logged_by === id) g.logged_by = to;
       }
       for (const m of D.money){
-        if (m.profile_id === id) m.profile_id = user.id;
-        if (m.created_by === id) m.created_by = user.id;
+        if (m.profile_id === id) m.profile_id = to;
+        if (m.created_by === id) m.created_by = to;
       }
-      for (const p of D.players) if (p.profile_id === id) p.profile_id = user.id;
-      for (const x of D.sessions) if (x.created_by === id) x.created_by = user.id;
-      const mine = D.profiles.find(p => p.id === user.id);
-      if (mine) mine.display_name = old.display_name;
+      for (const p of D.players) if (p.profile_id === id) p.profile_id = to;
+      for (const x of D.sessions) if (x.created_by === id) x.created_by = to;
+      for (const x of D.guests) if (x.created_by === id) x.created_by = to;
+      for (const e of D.edits) if (e.editor_id === id) e.editor_id = to;
+      mine.display_name = old.display_name;
+      for (const k of ['hand', 'ball_weight', 'home_house', 'avatar_url']) mine[k] = mine[k] ?? old[k] ?? null;
+      for (const x of D.claims) if (x.target_id === id && x.status === 'pending' && x.id !== cid) settle(x, 'denied');
+      settle(c, 'approved');
+      for (const x of D.claims) if (x.target_id === id) x.target_id = null;
       D.profiles = D.profiles.filter(p => p.id !== id);
+      return {};
+    },
+    async denyClaim(cid){
+      if (!user) throw new Error('nobody is signed in');
+      if (!bossHere()) throw new Error('only the commissioner can say no to that');
+      const c = D.claims.find(x => x.id === cid && x.status === 'pending');
+      if (!c) throw new Error('that is not waiting on anybody');
+      settle(c, 'denied');
+      return {};
+    },
+    async cancelClaim(cid){
+      if (!user) throw new Error('nobody is signed in');
+      const c = D.claims.find(x => x.id === cid && x.requester_id === user.id && x.status === 'pending');
+      if (!c) throw new Error('that is not yours to take back, or it is already settled');
+      settle(c, 'cancelled');
       return {};
     },
     /* Mirrors claim_guest in schema.sql: the money moves, the guest goes. */
@@ -1626,6 +1688,32 @@ async function liveDB(){
     }
     return data || [];
   };
+  /* Newer than everything above, and optional: a database that has not run
+     migrate-claim-approval.sql yet is not a version behind for anything else,
+     so a missing table here must not put up the stale-schema card. It just
+     means nobody can be asking to be anybody. */
+  const claims = async () => {
+    const { data, error } = await sb.from('claim_requests').select('*');
+    if (error){
+      if (/does not exist|schema cache|relation/i.test(error.message || '')){
+        state.claimsReady = false;
+        return [];
+      }
+      throw error;
+    }
+    state.claimsReady = true;
+    return data || [];
+  };
+  const claimRpc = async (fn, args) => {
+    const { data, error } = await sb.rpc(fn, args);
+    if (error){
+      if (new RegExp(fn + '|function.*does not exist|schema cache', 'i').test(error.message || ''))
+        throw new Error('This database has not been taught how to do that yet. '
+          + 'Run migrate-claim-approval.sql in the Supabase SQL editor.');
+      throw error;
+    }
+    return data;
+  };
   return {
     kind:'live', sb,
     async init(){
@@ -1654,11 +1742,11 @@ async function liveDB(){
       return !a.error && !b.error && !c.error;
     },
     async loadAll(){
-      const [profiles, sessions, players, games, rolls, edits, money, guests] = await Promise.all([
+      const [profiles, sessions, players, games, rolls, edits, money, guests, claimRows] = await Promise.all([
         table('profiles'), table('sessions'), table('session_players'),
-        table('games'), table('rolls'), table('edits'), table('money'), table('guests'),
+        table('games'), table('rolls'), table('edits'), table('money'), table('guests'), claims(),
       ]);
-      return { profiles, sessions, players, games, rolls, edits, money, guests };
+      return { profiles, sessions, players, games, rolls, edits, money, guests, claims: claimRows };
     },
     async signUp({ email, password, name }){
       const { error } = await sb.auth.signUp({ email, password, options:{ data:{ display_name:name } } });
@@ -1680,22 +1768,15 @@ async function liveDB(){
       const { data, error } = await sb.auth.signInAnonymously({ options:{ data:{ display_name:name } } });
       if (error) throw anonError(error);
       if (data?.session) rememberOnDevice(data.session.user.id, data.session, name);
-      return {};
+      return { id: data?.user?.id || data?.session?.user?.id || null };
     },
-    /* Walking back into a name that never had a password. Same shape as
-       claiming a guest, because it is the same situation. */
-    async claimProfile(id){
-      const { error } = await sb.rpc('claim_profile', { old_id: id });
-      if (error){
-        if (/claim_profile|function.*does not exist|schema cache/i.test(error.message || '')){
-          state.staleSchema = true;
-          throw new Error('This database has not been taught how to do that yet. '
-            + 'Run migrate-claim-account.sql in the Supabase SQL editor.');
-        }
-        throw error;
-      }
-      return {};
-    },
+    /* Walking back into a name that never had a password. Tapping it only
+       asks; the commissioner says yes or no in the database, and nothing
+       moves until they say yes. See request_claim in schema.sql. */
+    async requestClaim(targetId){ return claimRpc('request_claim', { target: targetId }); },
+    async approveClaim(id){ await claimRpc('approve_claim', { request_id: id }); return {}; },
+    async denyClaim(id){ await claimRpc('deny_claim', { request_id: id }); return {}; },
+    async cancelClaim(id){ await claimRpc('cancel_claim', { request_id: id }); return {}; },
     async claimGuest(id){
       const { error } = await sb.rpc('claim_guest', { g: id });
       if (error){
@@ -1863,6 +1944,7 @@ async function setArchived(id, on){
 async function load(){
   const d = await db.loadAll();
   Object.assign(state, d);
+  state.claims = d.claims || [];
   /* Everything downstream — every tab, every total, every record — reads the
      filtered lists, so a night in the archive is simply not in the book. The
      originals stay on state.all for the archive tab itself. */
@@ -3384,11 +3466,118 @@ const isBoss = () => !!(state.me && state.me.is_admin);
 const canEdit = g => !!(state.user && (state.user.id === g.profile_id || state.user.id === g.logged_by || isBoss()));
 const bossChip = () => h('span.chip.boss', {}, 'commissioner');
 
+/* ---- asking to be somebody --------------------------------------------
+   Tapping a name with no password on it no longer hands it over. It asks,
+   and the commissioner says yes or no from the Home tab. Until they say yes
+   the person asking is signed in as an empty account of their own, and
+   nothing under the name they asked for has moved. */
+const CLAIM_KEY = 'bowl.claim';        // the empty sign-in this phone made to ask with
+const TOLD_KEY  = 'bowl.claim.told';   // the no's already passed on, by request id
+const pendingClaims = () => state.claims.filter(c => c.status === 'pending');
+const myPendingClaim = () => state.user
+  ? pendingClaims().find(c => c.requester_id === state.user.id) || null : null;
+function claimAsker(){
+  try { return JSON.parse(localStorage.getItem(CLAIM_KEY) || 'null'); } catch { return null; }
+}
+function rememberAsker(id, target){
+  try { localStorage.setItem(CLAIM_KEY, JSON.stringify({ id, target })); } catch {}
+}
+function toldNo(){
+  try { return new Set(JSON.parse(localStorage.getItem(TOLD_KEY) || '[]')); } catch { return new Set(); }
+}
+/* Shown on this page load already, so it stays up until dismissed even
+   though it is written down as told. */
+const SAYING_NO = new Set();
+
+/* The commissioner's side: everybody waiting, oldest first, yes or no. */
+function askingCard(){
+  if (!isBoss()) return null;
+  const waiting = pendingClaims().sort((a, b) => String(a.requested_at).localeCompare(String(b.requested_at)));
+  if (!waiting.length) return null;
+  const msg = h('div.err', {});
+  const box = h('div.card.asking', { style:{ borderColor:'rgba(57,135,229,.5)' } },
+    h('div.row.wrapf', {}, bossChip(), h('div.up', {}, 'Asking to be somebody')),
+    h('p.tiny.muted', { style:{ marginTop:'6px' } },
+      'Each of these tapped a name with no password on it and said it was them. '
+      + 'Say yes and everything under that name moves onto them. Say no and nothing moves.'),
+    h('p.tiny.muted', { style:{ marginTop:'4px' } },
+      'Check with them in person before saying yes — a tap on a name is all the book knows.'));
+  const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  for (const c of waiting){
+    /* The empty account they are asking from was usually made under the very
+       name they asked for, so "ac wants to be ac" says nothing. Say that it
+       is somebody new, and how new. */
+    const asker = state.profiles.find(p => p.id === c.requester_id);
+    const name = asker?.display_name && !same(asker.display_name, c.target_name) ? asker.display_name : 'Somebody new';
+    const who = name + (asker?.joined_at ? ` (joined ${ago(asker.joined_at)})` : '');
+    const answer = (label, cls, run) => h('button.btn.sm' + cls, { async onclick(){
+      msg.className = 'err'; msg.textContent = '';
+      try { if (await run() === false) return; await load(); render(); }
+      catch (err){ msg.textContent = err.message || String(err); }
+    } }, label);
+    box.append(h('div.spread', { style:{ marginTop:'10px', gap:'8px' } },
+      h('div.small', { style:{ minWidth:0 } }, `${who} wants to be ${c.target_name} · asked ${ago(c.requested_at)}`),
+      h('div.row', { style:{ gap:'6px', flexShrink:0 } },
+        answer('Approve', '.pri', async () => {
+          if (!confirm(`Make ${who} into ${c.target_name}? Everything under ${c.target_name} `
+                     + 'moves onto them and the old name goes.')) return false;
+          await db.approveClaim(c.id);
+          toast(`${who} is ${c.target_name} now.`);
+        }),
+        answer('Deny', '', async () => {
+          await db.denyClaim(c.id);
+          toast(`Said no to ${who} being ${c.target_name}.`);
+        }))));
+  }
+  box.append(msg);
+  return box;
+}
+
+/* The asking side, while it waits. */
+function waitingCard(){
+  const c = myPendingClaim();
+  if (!c) return null;
+  const msg = h('div.err', {});
+  return h('div.card.waiting', { style:{ borderColor:'rgba(201,133,0,.5)' } },
+    h('div.up.gold', {}, 'Waiting on the commissioner'),
+    h('p.small.ink2', { style:{ marginTop:'4px' } },
+      `You asked to be ${c.target_name} ${ago(c.requested_at)}. `
+      + 'Once they OK it, everything under that name becomes yours.'),
+    msg,
+    h('button.btn.sm', { style:{ marginTop:'8px' }, async onclick(){
+      if (!confirm(`Stop asking to be ${c.target_name}?`)) return;
+      msg.className = 'err'; msg.textContent = '';
+      try { await db.cancelClaim(c.id); await load(); render(); toast('Never mind, then.'); }
+      catch (err){ msg.textContent = err.message || String(err); }
+    } }, 'Never mind'));
+}
+
+/* And if the answer was no, say so once. */
+function saidNoCard(){
+  if (!state.user) return null;
+  const told = toldNo();
+  const news = state.claims.filter(c => c.requester_id === state.user.id && c.status === 'denied'
+                                        && (!told.has(c.id) || SAYING_NO.has(c.id)));
+  if (!news.length) return null;
+  for (const c of news){ told.add(c.id); SAYING_NO.add(c.id); }
+  try { localStorage.setItem(TOLD_KEY, JSON.stringify([...told])); } catch {}
+  const names = [...new Set(news.map(c => c.target_name))].join(' or ');
+  const box = h('div.card.saidno', { style:{ borderColor:'rgba(230,103,103,.5)' } },
+    h('div.up', { style:{ color:'var(--red)' } }, 'Not this time'),
+    h('p.small.ink2', { style:{ marginTop:'4px' } },
+      `The commissioner said no to you being ${names}. Nothing moved. If that is wrong, have a word with them.`),
+    h('button.btn.sm', { style:{ marginTop:'8px' }, onclick(){
+      for (const c of news) SAYING_NO.delete(c.id);
+      box.remove();
+    } }, 'Got it'));
+  return box;
+}
+
 /* ======================================================================
    WHO ARE YOU
 
    The front door. Everybody the book already knows, laid out to be tapped.
-   Three kinds of face, and the difference is entirely about what it would
+   The kinds of face, and the difference is entirely about what it would
    cost to be wrong about who somebody is:
 
      a guest      — a name and nothing else. Nothing to steal, so tapping it
@@ -3397,9 +3586,19 @@ const bossChip = () => h('span.chip.boss', {}, 'commissioner');
      an account
      this device
      has met      — the session is in the ring. Tap and you are in.
+     an account
+     with no
+     password     — nothing to type, but a whole history to take. Tapping it
+                    only asks; the commissioner says yes or no, and nothing
+                    moves until they say yes.
      any other
      account      — has a password. Asking for it is the whole point; a face
                     is not a credential.
+
+   Whoever is waiting on the commissioner is signed in as an empty account
+   of their own, usually under the very name they asked for. Every other
+   phone leaves that one off, or the door would show the name twice with
+   one of them an empty shell. The name they asked for keeps its face.
    ====================================================================== */
 function whoAreYouCard(){
   const box = card();
@@ -3407,7 +3606,9 @@ function whoAreYouCard(){
 
   const guests = state.guests.slice()
     .sort((a, b) => a.name.localeCompare(b.name));
-  const accounts = state.profiles.slice()
+  const asking = new Set(pendingClaims().map(c => c.requester_id));
+  const askedFor = new Set(pendingClaims().map(c => c.target_id));
+  const accounts = state.profiles.filter(p => !asking.has(p.id) || deviceKnows(p.id))
     .sort((a, b) => (deviceKnows(b.id) - deviceKnows(a.id))
                  || String(a.display_name || '').localeCompare(String(b.display_name || '')));
 
@@ -3423,9 +3624,8 @@ function whoAreYouCard(){
      wrong about somebody:
        this device knows them  — put the session back, straight in
        they have a password    — ask for it; a name is not a way in
-       they never made one     — there is nothing to ask for. A name with no
-                                 password behind it is a guest by another
-                                 word, so it is walked into the same way. */
+       they never made one     — there is nothing to ask for, so the
+                                 commissioner is asked instead. */
   for (const p of accounts){
     const known = deviceKnows(p.id);
     /* Fail closed. On a database that has not been given has_login yet the
@@ -3433,7 +3633,10 @@ function whoAreYouCard(){
        offer every real account up to be walked into. Missing means locked. */
     const locked = !('has_login' in p) || !!p.has_login;
     people.append(face(p.display_name || 'Bowler',
-      known ? 'tap to sign in' : locked ? 'needs a password' : 'no password — tap to be them',
+      known ? (asking.has(p.id) ? 'tap to sign in — waiting on the commissioner' : 'tap to sign in')
+      : locked ? 'needs a password'
+      : askedFor.has(p.id) ? 'no password — somebody asked to be them, waiting on the commissioner'
+      : 'no password — tap to be them',
       avatar(p),
       () => known ? resumeFace(p) : locked ? passwordFor(p)
                   : claimFace({ id: p.id, name: p.display_name || 'Bowler', profile: true })));
@@ -3489,22 +3692,49 @@ function whoAreYouCard(){
     openSheet('Is this you?', body => {
       body.append(
         h('p.small.ink2', {}, bits.length
-          ? `Everything the book has under ${g.name} — ${bits.join(', ')} — becomes yours.`
-          : `You will become ${g.name}.`),
+          ? `${g.profile ? 'Once the commissioner OKs it, e' : 'E'}verything the book has under ${g.name} — ${bits.join(', ')} — becomes yours.`
+          : g.profile ? `Once the commissioner OKs it, you will become ${g.name}.` : `You will become ${g.name}.`),
         h('p.tiny.muted', { style:{ marginTop:'6px' } }, g.profile
-          ? `${g.name} never put a password on this, so there is nothing to type. Tapping it is the way back in.`
+          ? `${g.name} never put a password on this, so there is nothing to type. That also means anybody could tap it, `
+            + 'so the commissioner has to OK it first. Until they do, nothing moves.'
           : `“${g.name}” stops being a guest.`),
         berr,
         h('button.btn.pri.wide.big', { style:{ marginTop:'12px' }, async onclick(){
           berr.className = 'err'; berr.textContent = '';
           try {
-            await db.anon({ name: g.name });
-            if (g.profile) await db.claimProfile(g.id); else await db.claimGuest(g.id);
-            closeSheet(); await boot(true); toast(`You are ${g.name}.`);
+            if (g.profile){
+              /* A page that went out before the SQL did has nowhere to put
+                 the asking. Say so before minting an account for nothing. */
+              if (!state.claimsReady)
+                throw new Error('The commissioner has to OK this, and the database has not been set up for that yet. '
+                  + 'Run migrate-claim-approval.sql in the Supabase SQL editor.');
+              /* Asking again for the same name from this phone reuses the
+                 empty sign-in it made last time, rather than minting another.
+                 Only for the same name: on a phone passed down the lane, the
+                 next person asking for somebody else is somebody else. */
+              const kept = claimAsker();
+              let back = false;
+              if (kept && kept.target === g.id && deviceKnows(kept.id)
+                  && state.profiles.some(p => p.id === kept.id)){
+                try { await db.resume(kept.id); back = true; } catch {}
+              }
+              if (!back){
+                const made = await db.anon({ name: g.name });
+                if (made?.id) rememberAsker(made.id, g.id);
+              }
+              await db.requestClaim(g.id);
+              closeSheet(); await boot(true);
+              toast('Asked the commissioner. You will be switched over once they OK it.');
+            } else {
+              await db.anon({ name: g.name });
+              await db.claimGuest(g.id);
+              closeSheet(); await boot(true); toast(`You are ${g.name}.`);
+            }
           } catch (err){ berr.className = 'err'; berr.textContent = err.message || String(err); }
         } }, `Yes, I'm ${g.name}`),
         h('button.btn.wide', { style:{ marginTop:'8px' }, onclick: closeSheet }, 'No, that is somebody else'));
-    }, 'This takes over their whole history. Worth being sure.');
+    }, g.profile ? 'This asks for their whole history. The commissioner has the last word.'
+                 : 'This takes over their whole history. Worth being sure.');
   }
 
   /* Nobody on the list. A name, and in you go. */
@@ -3747,6 +3977,7 @@ function tabHome(){
       h('p.small.ink2', { style:{ marginTop:'4px' } },
         'Open index.html, find the SUPA block near the top of the script, and paste in your Supabase URL and anon key. Step 3 of the README.')));
   if (state.staleSchema) box.append(staleSchemaCard());
+  put(box, [askingCard(), waitingCard(), saidNoCard()]);
   if (!state.user) box.append(whoAreYouCard());
   if (state.user && !profileComplete(state.me)) box.append(profileSetup());
 
@@ -5986,6 +6217,7 @@ function tabMe(){
   /* Reached from the People tab, so it needs the same way out as anything
      else you step into. */
   box.append(flowHead('You', state.me?.display_name || null, () => go('people'), 'People'));
+  put(box, [waitingCard()]);
   if (isBoss()) box.append(h('div.card', {},
     h('div.row.wrapf', {}, bossChip(),
       h('span.small.ink2', {}, 'You can fix or delete anybody’s games and sessions.')),
